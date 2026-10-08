@@ -4,7 +4,7 @@
 // starter-kits:agents/openclaw/deployment/README.md:12,14,18,116-137,141,154,163,165
 // starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:3,141,169-201,205
 // starter-kits:agents/openclaw/deployment/docs/installer-deployment.md:3,5,395-404,419,438
-// starter-kits:agents/openclaw/deployment/docs/mlflow-tracing.md:50,129
+// starter-kits:agents/openclaw/deployment/docs/mlflow-tracing.md:41,50,129
 // starter-kits:agents/openclaw/deployment/docs/troubleshooting.md:286
 // starter-kits:agents/openclaw/deployment/manifests/kustomization.yaml:4-10
 // starter-kits:agents/openclaw/deployment/manifests/01-secret.yaml:8-10
@@ -13,26 +13,27 @@
 // starter-kits:agents/openclaw/templates/openclaw_agent/README.md:21
 // starter-kits:sandboxes/base/README.md:49-51
 // starter-kits:docs/mlflow-openshift-auth-and-tls.md:96-122
-// claw-installer:README.md:16-36
-// claw-installer:provider-plugins/openshift/docs/deploy-openshift.md:3,31,45-46,53-59,79-85,103-105
+// claw-installer:README.md:10-13,16-38
+// claw-installer:provider-plugins/openshift/docs/deploy-openshift.md:3,23-29,31,45-49,53-59,79-85,103-105
 // claw-installer:provider-plugins/openshift/src/openshift-deployer.ts:285,333-334,377-380,396-417
 // claw-installer:provider-plugins/openshift/src/route.ts:35-38
 // claw-installer:provider-plugins/openshift/templates/oauth-proxy-container.yaml:1-7,13-20
 // claw-installer:src/client/components/DeployForm.tsx:1163-1178
-// claw-installer:src/server/deployers/k8s-helpers.ts:36,60-64,935-938
-// claw-installer:src/server/deployers/k8s-manifests.ts:322-333,415-418,631,800-802,833,861-863,879-902,903-905,917-921,1079
+// claw-installer:src/server/deployers/k8s-helpers.ts:36-38,60-64,935-938
+// claw-installer:src/server/deployers/k8s-manifests.ts:38-40,322-333,415-418,631,800-802,833,861-863,879-902,903-905,917-921,1041,1079
 // claw-installer:src/server/deployers/kubernetes.ts:150-153,266,409-417
 // openclaw:Dockerfile:458-459
 // openclaw:docker-entrypoint.mjs:72-116
 // openclaw:gateway-run-argv.mjs:33-46
 // openclaw:docs/install/docker.md:230-234,247-249
 // openclaw:docs/install/kubernetes.md:95
+// openclaw:docs/web/control-ui/connect-and-pair.md:50
 // openclaw:scripts/k8s/manifests/deployment.yaml:147-157,165-166
 // openshell:docs/kubernetes/setup.mdx:11-16,28-31,44,50-58,70-71
 // openshell:docs/upgrade/0-1-0.mdx:27
 
 The start page introduced three ways to run OpenClaw: the recipe's raw manifests, claw-installer, and an OpenShell sandbox.
-All three end with an OpenClaw gateway you can chat with, but they take very different routes to get there.
+All three end with an OpenClaw gateway you can chat with, but they get there by different routes.
 So which one is yours?
 Let's line them up on the questions that usually decide it: who gets in, which image runs, where the configuration lives, what happens on an upgrade, who needs cluster-admin rights, and how far along each path is.
 If you only want the short answer, the recipe recommends the raw manifests.
@@ -59,7 +60,7 @@ The rest of the page shows you when one of the others might still fit better, an
 
 |OpenClaw image
 |Pinned by digest to OpenClaw {openclaw-version}
-|`ghcr.io/openclaw/openclaw:latest`, unless you enter another image
+|`ghcr.io/openclaw/openclaw:latest` by default, and the form can name another image
 |Built by you, with OpenClaw {openclaw-version} on a `:latest` base image
 
 |Configuration after the first start
@@ -74,8 +75,8 @@ The rest of the page shows you when one of the others might still fit better, an
 
 |Needs cluster-admin
 |Only for MLflow tracing on Red Hat OpenShift AI (RHOAI) 3.3.1
-|Not when OpenShift lets you create projects or you use an existing one
-|Yes, once, to install OpenShell
+|Not for the deployment itself, if you can create projects or use an existing one
+|Yes, to install and upgrade OpenShell
 
 |Status in the recipe
 |Recommended, and tested with OpenClaw {openclaw-version}
@@ -113,8 +114,9 @@ It's a setup for trying things out, and that's how the recipe describes this pat
 The raw manifests pin the OpenClaw image by digest, for the init container and the gateway alike.
 You run OpenClaw {openclaw-version}, the version the recipe was tested with, until you change the digest yourself.
 
-claw-installer defaults to `ghcr.io/openclaw/openclaw:latest` for the gateway and to `registry.access.redhat.com/ubi9-minimal:latest` for its init container.
-Unlike a digest, neither tag pins a particular build.
+claw-installer's default gateway image is `ghcr.io/openclaw/openclaw:latest`, and its init container always uses `registry.access.redhat.com/ubi9-minimal:latest`.
+If you pick the installer's OpenShell sandbox backend, the default gateway image becomes `quay.io/sallyom/openclaw-openshell:latest` instead.
+Unlike a digest, none of these tags pins a particular build.
 The form's *Image* field replaces the default gateway image, so that's where a pinned reference goes if you want one.
 
 For the sandbox, you build the image yourself from the recipe's `Containerfile.openshell`.
@@ -160,17 +162,19 @@ Two optional pieces need more, though.
 MLflow tracing on RHOAI 3.3.1::
 The tracing overlay binds the `mlflow-integration` ClusterRole to its ServiceAccount, and RHOAI 3.3.1 doesn't ship that role.
 You create it from the definition in the starter kits' shared MLflow guide.
-A ClusterRole is a cluster-wide object, so that's a job for a cluster administrator.
+A ClusterRole is a cluster-scoped object, so creating one takes cluster-wide RBAC rights, the kind of change that claw-installer's docs leave to a cluster administrator.
 xref:admin/tracing.adoc[Send traces to MLflow] has the details.
 
 OpenShell::
-Before the OpenShell Helm chart goes in, the cluster needs the Agent Sandbox controller and its cluster-scoped CRDs, and the chart doesn't install them.
+Before the OpenShell Helm chart goes in, the cluster needs the Agent Sandbox controller and its cluster-scoped CRDs, and the chart neither installs nor upgrades them.
 claw-installer's README, which comes with an OpenShell setup of its own, files the OpenShell installation under cluster-admin work as well.
-It's a one-time job, and xref:admin/install-openshell.adoc[Install OpenShell for sandboxes] covers it.
+So the administrator comes back for OpenShell upgrades, too.
+xref:admin/install-openshell.adoc[Install OpenShell for sandboxes] covers the installation.
 After that, developers create their sandboxes through the `openshell` CLI.
 
-claw-installer gets by without cluster-admin, as long as OpenShift lets you create projects or you deploy into a project you already have.
-The one thing it can't give you without a cluster administrator is the tighter OAuth setup from <<who-gets-in>>.
+claw-installer deploys without cluster-admin, as long as OpenShift lets you create projects or you deploy into a project you already have.
+Without a cluster administrator, though, you give up the tighter OAuth setup from <<who-gets-in>>.
+And the installer's OpenShell sandbox backend needs an OpenShell gateway that a cluster administrator installed.
 
 == How far along each path is
 
@@ -191,8 +195,8 @@ OpenShell's own upgrades can break existing setups, too: sandboxes created with 
 
 == Known limits
 
-The recipe leaves a few things to you, whichever path you pick.
-Here they are, so none of them catches you off guard later.
+The recipe leaves a few things to you.
+Most of them concern the two paths that run the gateway as a Deployment, the raw manifests and claw-installer, and each entry says where the paths differ.
 
 Single replica::
 The Deployment runs exactly one replica with the Recreate strategy, and claw-installer does the same.
@@ -203,14 +207,15 @@ No NetworkPolicy::
 Neither the recipe's manifests nor claw-installer create a NetworkPolicy.
 What the gateway Pod may connect to, and who may connect to it, is up to your cluster's defaults.
 The sandbox is the exception here.
-OpenShell creates NetworkPolicies around every sandbox, provided your network plugin enforces them, and the sandbox policy blocks all outbound traffic until you allow it.
+OpenShell creates NetworkPolicies around every sandbox, but they only take effect when your cluster's network plugin enforces them.
+On top of that, the sandbox policy blocks all outbound traffic until you allow it.
 
 No read-only root filesystem::
 Both containers of the raw manifests drop all Linux capabilities and disallow privilege escalation, but they leave the root filesystem writable.
 OpenClaw's own Kubernetes manifests set `readOnlyRootFilesystem: true` and mount an `emptyDir` at `/tmp`, and claw-installer does the same for its gateway container.
 
 Manual token rotation::
-Neither path rotates the gateway token for you.
+Neither the raw manifests nor claw-installer rotates the gateway token for you.
 With the raw manifests, it's the value you write into the Secret, and it stays that way until you change it.
 claw-installer generates a fresh token each time you deploy from the form, and at no other time.
 It also writes the token in plain text into the `openclaw.json` of its ConfigMap `openclaw-config`, so keep in mind who can read ConfigMaps in that project.
