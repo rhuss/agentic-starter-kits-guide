@@ -48,3 +48,10 @@ rules:
       - 'xref:admin/install-openshell\.adoc'
       - 'xref:admin/deploy-installer\.adoc'
       - 'xref:reference/troubleshooting\.adoc'
+  - glob: "content/modules/ROOT/pages/admin/prerequisites.adoc"
+    require:
+      - '^Check:'
+      - 'oc get storageclass'
+      - '--tool-call-parser'
+      - '--enable-auto-tool-choice'
+      - '(?i)NFS'

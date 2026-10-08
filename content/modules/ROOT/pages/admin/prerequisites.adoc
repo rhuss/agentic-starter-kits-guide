@@ -1,5 +1,160 @@
 = Check the prerequisites
-:guide-no-sources:
 
-// STUB
-This page is not written yet.
+// Sources:
+// starter-kits:agents/openclaw/deployment/README.md:12,18-20,60,73,116
+// starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:3,11-23,139
+// starter-kits:agents/openclaw/deployment/docs/model-compatibility.md:5,11
+// starter-kits:agents/openclaw/deployment/docs/mlflow-tracing.md:128-129
+// starter-kits:docs/mlflow-openshift-auth-and-tls.md:98-103
+// starter-kits:agents/openclaw/deployment/manifests/kustomization.yaml:4-10
+// starter-kits:agents/openclaw/deployment/manifests/03-pvc.yaml:4,8-15
+// starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/rbac.yaml:12-31
+// openshell:docs/kubernetes/setup.mdx:44,50,58,70-71
+// openshell:docs/kubernetes/openshift.mdx:37-42
+// openshell:deploy/helm/openshell/templates/clusterrole.yaml:5-8
+// openshell:deploy/helm/openshell/templates/clusterrolebinding.yaml:4-17
+// claw-installer:README.md:35-36
+
+Before you apply the manifests, make sure your cluster and your model endpoint give the recipe what it expects.
+The base deployment needs three things: OpenShift with access to a namespace, a block storage class, and a model endpoint that handles tool calls.
+Two optional parts, MLflow tracing and OpenShell, also need a cluster administrator.
+The commands at the end of the page run the recipe's own prerequisite check against your cluster.
+
+== OpenShift and namespace access
+
+The recipe asks for OpenShift 4.17 or later and namespace-scoped access through `oc login`.
+Its most recent test ran on OpenShift 4.22.
+
+Namespace-scoped access is enough because every object in `manifests/` lives in your namespace: a Secret, a ConfigMap, a PersistentVolumeClaim, a Deployment, a Service, and a Route.
+For these base manifests, the README's promise of "no cluster-admin required" holds.
+xref:admin/deploy.adoc[Deploy OpenClaw] starts by creating the project `my-openclaw` with `oc new-project`.
+
+== Block storage for the gateway's state
+
+The gateway keeps its state on the PersistentVolumeClaim `openclaw-state`, which requests 5Gi with access mode ReadWriteOnce from the storage class `gp3-csi`.
+Give it a block storage class, such as `gp3-csi`, `managed-csi`, or `thin-csi`.
+Avoid NFS: OpenClaw stores its state in SQLite, and SQLite requires POSIX file locking.
+If your cluster doesn't offer `gp3-csi`, you pick another class when you configure the deployment, as xref:admin/configure-model.adoc[Configure the model endpoint and secrets] shows.
+
+== A model endpoint with tool calling
+
+The gateway talks to its model through an OpenAI-compatible API.
+The endpoint behind it can be vLLM, KServe, or an external API.
+The recipe's deployment guide describes two setups: a vLLM server that OpenClaw calls directly, or an OGX gateway in front of vLLM.
+
+Whichever setup you use, the model has to support structured tool calling, because OpenClaw relies on it.
+Not every model does.
+Some emit raw JSON instead of calling the tool, and some make up tool results when a call fails silently.
+xref:reference/model-compatibility.adoc[Model compatibility] lists the models the recipe tested.
+
+=== vLLM flags for tool calling
+
+When OpenClaw calls a vLLM server directly, the server runs with `--enable-auto-tool-choice` and a `--tool-call-parser` that matches the model family.
+The recipe and this guide's tests name these two combinations:
+
+[cols="1,2,3",options="header"]
+|===
+|Model family
+|vLLM flags
+|Where it comes from
+
+|gpt-oss
+|`--enable-auto-tool-choice --tool-call-parser openai`
+|The recipe's model compatibility table, which requires both flags for gpt-oss-20b
+
+|Qwen2.5
+|`--enable-auto-tool-choice --tool-call-parser hermes`
+|The tested Qwen2.5 deployment: Qwen2.5-0.5B-Instruct on vLLM (Red Hat AI Inference Server 3.3, CPU), the same model and server as the recipe's most recent test
+|===
+
+[WARNING]
+====
+The recipe's prerequisite list gives `--tool-call-parser openai` for every vLLM server that OpenClaw calls directly, but that parser is the one for gpt-oss models.
+If your model comes from another family, don't copy the flag.
+For Qwen2.5, the tested Qwen2.5 deployment used `hermes`, and for other families the recipe names no parser.
+====
+
+This guide doesn't cover setting up the model server itself.
+
+== Optional parts that need cluster-admin
+
+The base manifests stay inside your namespace, but two optional parts reach beyond it.
+If you plan to use either one, bring in a cluster administrator before you start.
+xref:overview/choose-a-path.adoc#who-needs-cluster-admin[Who needs cluster-admin] compares the three ways to run OpenClaw on this question.
+
+MLflow tracing::
+The overlay `overlays/mlflow-tracing/` needs Red Hat OpenShift AI (RHOAI) with MLflow, which means the `mlflow` service runs in `redhat-ods-applications` with `--enable-workspaces`.
+The overlay creates the ServiceAccount `openclaw-tracing` and a RoleBinding that grants it the `mlflow-integration` ClusterRole.
+The MLflow operator ships that ClusterRole, sometimes under a prefixed name such as `mlflow-operator-mlflow-integration`.
+RHOAI 3.3.1 doesn't ship it, and since a ClusterRole is cluster-scoped, a cluster administrator has to create it from the definition in the starter kits' shared MLflow guide.
+The last step in <<verify-your-cluster>> shows whether the role exists, and xref:admin/tracing.adoc[Send traces to MLflow] covers the rest.
+
+OpenShell::
+To run OpenClaw in OpenShell sandboxes on the cluster, developers need an OpenShell gateway there.
+The cluster needs the Agent Sandbox controller and its cluster-scoped CRDs before the OpenShell Helm chart goes in, and the chart neither installs nor upgrades them.
+The chart itself creates a ClusterRole and a ClusterRoleBinding for its ServiceAccount.
+OpenShell on OpenShift also expects Helm 3.x and a CNI that enforces ingress and egress NetworkPolicy in the sandbox namespaces.
+claw-installer's README files the OpenShell installation under cluster-admin work, too.
+xref:admin/install-openshell.adoc[Install OpenShell for sandboxes] walks through it.
+
+== Verify your cluster
+
+The recipe checks its prerequisites with three `oc` commands.
+Run them while you're logged in with the account you'll deploy with, because some results depend on that account's rights.
+The last two steps are optional and concern only your model server and tracing.
+
+. Check the cluster version.
+With namespace-scoped access, `oc version` can omit the `Server Version` line and print only the client and Kubernetes versions.
+In that case, ask your cluster administrator which OpenShift version the cluster runs.
++
+Check: the `Server Version` line shows 4.17 or later.
++
+[source,bash]
+----
+oc version
+----
+// expect: contains "Kubernetes Version"
+
+. Confirm the account you're logged in with.
++
+Check: `oc whoami` prints your user name instead of an error.
++
+[source,bash]
+----
+oc whoami
+----
+// expect: exit 0
+
+. List the storage classes.
+If `gp3-csi` isn't in the list, note the block storage class you'll use instead.
++
+Check: the list contains at least one block storage class, such as `gp3-csi`, `managed-csi`, or `thin-csi`.
++
+[source,bash]
+----
+oc get storageclass
+----
+// expect: lines >= 2
+
+. Optional: if vLLM runs as a Deployment on your cluster and you can read it, look at its arguments.
++
+Check: the arguments contain `--enable-auto-tool-choice` and `--tool-call-parser` with the parser for your model family.
++
+[source,bash]
+----
+oc get deployment <vllm-deployment> -n <model-namespace> -o jsonpath='{.spec.template.spec.containers[0].args}'
+----
+// expect: contains "--enable-auto-tool-choice" and contains "--tool-call-parser"
+
+. Optional: if you plan to use tracing, look for the `mlflow-integration` ClusterRole.
+No output means the role doesn't exist yet, and a cluster administrator has to create it first.
++
+Check: the output lists a ClusterRole whose name contains `mlflow-integration`.
++
+[source,bash]
+----
+oc get clusterroles | grep mlflow-integration
+----
+// expect: contains "mlflow-integration"
+
+Once the checks pass, continue with xref:admin/configure-model.adoc[Configure the model endpoint and secrets].
