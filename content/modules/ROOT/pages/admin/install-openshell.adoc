@@ -1,0 +1,5 @@
+= Install OpenShell for sandboxes
+:guide-no-sources:
+
+// STUB
+This page is not written yet.

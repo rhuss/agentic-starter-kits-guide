@@ -1,2 +1,36 @@
 .Overview
 * xref:index.adoc[Start here]
+* xref:overview/architecture.adoc[How the deployment fits together]
+* xref:overview/choose-a-path.adoc[Choose how to run OpenClaw]
+
+.Administrator guide
+* xref:admin/index.adoc[Administrator guide]
+* xref:admin/prerequisites.adoc[Check the prerequisites]
+* xref:admin/configure-model.adoc[Configure the model endpoint and secrets]
+* xref:admin/deploy.adoc[Deploy OpenClaw]
+* xref:admin/access.adoc[Open the Control UI]
+* xref:admin/change-config.adoc[Change the configuration of a running gateway]
+* xref:admin/tracing.adoc[Send traces to MLflow]
+* xref:admin/maintain.adoc[Back up, upgrade, and remove]
+* xref:admin/install-openshell.adoc[Install OpenShell for sandboxes]
+* xref:admin/deploy-installer.adoc[Deploy with claw-installer]
+
+.User guide
+* xref:user/index.adoc[User guide]
+* xref:user/connect.adoc[Connect and pair your browser]
+* xref:user/first-chat.adoc[Hold your first conversation]
+* xref:user/whats-enabled.adoc[What this deployment can and cannot do]
+
+.Developer guide
+* xref:developer/index.adoc[Developer guide]
+* xref:developer/sandbox-image.adoc[How the sandbox image is built]
+* xref:developer/build-image.adoc[Build and push the images]
+* xref:developer/run-in-sandbox.adoc[Run OpenClaw in an OpenShell sandbox]
+* xref:developer/sandbox-model-config.adoc[Configure the model inside the sandbox]
+* xref:developer/extend.adoc[Extend the recipe]
+
+.Reference
+* xref:reference/manifests.adoc[Manifest reference]
+* xref:reference/configuration.adoc[Configuration reference]
+* xref:reference/model-compatibility.adoc[Model compatibility]
+* xref:reference/troubleshooting.adoc[Troubleshooting]

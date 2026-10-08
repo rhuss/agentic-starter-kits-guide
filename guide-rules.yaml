@@ -4,4 +4,12 @@
 #   forbid:         no regex may match anywhere in each file
 #   require_order:  the first matches of these regexes must appear in this order
 # Page tasks add rules for their page before writing it, so the check fails first.
-rules: []
+rules:
+  - glob: "content/modules/ROOT/pages/**/*.adoc"
+    forbid:
+      - '\{openclaw-(blob|tree)\}'
+      - '\bdocker (run|build|push|pull|login)\b'
+      - '\bpip3? install\b'
+  - glob: "content/modules/ROOT/pages/user/*.adoc"
+    forbid:
+      - '\boc (login|get|exec|rsh|port-forward|apply|annotate|delete)\b'
