@@ -17,7 +17,7 @@
 
 Before you apply the manifests, make sure your cluster and your model endpoint give the recipe what it expects.
 The base deployment needs three things: OpenShift with access to a namespace, a block storage class, and a model endpoint that handles tool calls.
-Two optional parts, MLflow tracing and OpenShell, also need a cluster administrator.
+Two optional parts can also need a cluster administrator: OpenShell, and MLflow tracing on Red Hat OpenShift AI (RHOAI) 3.3.1 or any other cluster without the `mlflow-integration` ClusterRole.
 The commands at the end of the page run the recipe's own prerequisite check against your cluster.
 
 == OpenShift and namespace access
@@ -71,22 +71,23 @@ The recipe and this guide's tests name these two combinations:
 ====
 The recipe's prerequisite list gives `--tool-call-parser openai` for every vLLM server that OpenClaw calls directly, but that parser is the one for gpt-oss models.
 If your model comes from another family, don't copy the flag.
-For Qwen2.5, the tested Qwen2.5 deployment used `hermes`, and for other families the recipe names no parser.
+The tested Qwen2.5 deployment used `hermes`, and for other families the recipe names no parser.
 ====
 
 This guide doesn't cover setting up the model server itself.
 
 == Optional parts that need cluster-admin
 
-The base manifests stay inside your namespace, but two optional parts reach beyond it.
-If you plan to use either one, bring in a cluster administrator before you start.
+The base manifests stay inside your namespace, but two optional parts can reach beyond it.
+If you plan to use OpenShell, or tracing on a cluster without the `mlflow-integration` ClusterRole, bring in a cluster administrator before you start.
 xref:overview/choose-a-path.adoc#who-needs-cluster-admin[Who needs cluster-admin] compares the three ways to run OpenClaw on this question.
 
-MLflow tracing::
-The overlay `overlays/mlflow-tracing/` needs Red Hat OpenShift AI (RHOAI) with MLflow, which means the `mlflow` service runs in `redhat-ods-applications` with `--enable-workspaces`.
+MLflow tracing on RHOAI 3.3.1::
+The overlay `overlays/mlflow-tracing/` needs RHOAI with MLflow, which means the `mlflow` service runs in `redhat-ods-applications` with `--enable-workspaces`.
 The overlay creates the ServiceAccount `openclaw-tracing` and a RoleBinding that grants it the `mlflow-integration` ClusterRole.
 The MLflow operator ships that ClusterRole, sometimes under a prefixed name such as `mlflow-operator-mlflow-integration`.
-RHOAI 3.3.1 doesn't ship it, and since a ClusterRole is cluster-scoped, a cluster administrator has to create it from the definition in the starter kits' shared MLflow guide.
+RHOAI 3.3.1 doesn't ship it.
+Where the role is missing, a cluster administrator has to create it from the definition in the starter kits' shared MLflow guide, since a ClusterRole is cluster-scoped.
 The last step in <<verify-your-cluster>> shows whether the role exists, and xref:admin/tracing.adoc[Send traces to MLflow] covers the rest.
 
 OpenShell::
@@ -104,10 +105,10 @@ Run them while you're logged in with the account you'll deploy with, because som
 The last two steps are optional and concern only your model server and tracing.
 
 . Check the cluster version.
-With namespace-scoped access, `oc version` can omit the `Server Version` line and print only the client and Kubernetes versions.
+With namespace-scoped access, `oc version` can omit the `Server Version` line, so the cluster shows up only through its Kubernetes version.
 In that case, ask your cluster administrator which OpenShift version the cluster runs.
 +
-Check: the `Server Version` line shows 4.17 or later.
+Check: the output shows a `Kubernetes Version` line, and the `Server Version` line, if present, shows 4.17 or later.
 +
 [source,bash]
 ----
