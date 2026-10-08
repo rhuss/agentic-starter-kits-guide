@@ -29,3 +29,9 @@ rules:
       - '/home/node'
       - 'doctor --fix'
       - 'xref:admin/deploy\.adoc'
+  - glob: "content/modules/ROOT/pages/overview/choose-a-path.adoc"
+    require:
+      - 'xref:admin/deploy\.adoc'
+      - 'xref:admin/deploy-installer\.adoc'
+      - 'xref:developer/run-in-sandbox\.adoc'
+      - '(?i)single replica|one replica'
