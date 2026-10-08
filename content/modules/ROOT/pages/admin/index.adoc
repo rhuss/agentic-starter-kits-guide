@@ -1,5 +1,125 @@
 = Administrator guide
-:guide-no-sources:
 
-// STUB
-This page is not written yet.
+// Sources:
+// starter-kits:agents/openclaw/deployment/README.md:18-20,59-63,86-89,116
+// starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:11-15,22,27-31,46-59,116-134,138-165,169-201,205-213,215-241
+// starter-kits:agents/openclaw/deployment/docs/installer-deployment.md:5
+// starter-kits:agents/openclaw/deployment/docs/model-compatibility.md:5,11
+// starter-kits:agents/openclaw/deployment/docs/mlflow-tracing.md:7,128-129,167,198-205,218
+// starter-kits:agents/openclaw/deployment/docs/troubleshooting.md:246-256
+// starter-kits:docs/mlflow-openshift-auth-and-tls.md:90
+// starter-kits:agents/openclaw/deployment/manifests/kustomization.yaml:4-10
+// starter-kits:agents/openclaw/deployment/manifests/01-secret.yaml:10-11
+// starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:8-11,35-37
+// starter-kits:agents/openclaw/deployment/manifests/03-pvc.yaml:4,8-15
+// starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:42-50,81-84,97-99,138-140
+// starter-kits:agents/openclaw/deployment/manifests/06-route.yaml:4,12-21
+// starter-kits:agents/openclaw/deployment/overlays/example/kustomization.yaml:5-9,18-24
+// starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/kustomization.yaml:5-8,13-24
+// starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/rbac.yaml:12-31
+// openshell:docs/kubernetes/setup.mdx:44,50,70-71
+// openshell:docs/kubernetes/openshift.mdx:41,51-61,76-84
+// openshell:deploy/helm/openshell/templates/clusterrole.yaml:5-8
+// openshell:deploy/helm/openshell/templates/clusterrolebinding.yaml:4-7
+// claw-installer:README.md:3,10-13,35-36
+// claw-installer:provider-plugins/openshift/docs/deploy-openshift.md:3
+
+This part of the guide is for the person who deploys OpenClaw on OpenShift and keeps it running.
+It follows the raw manifests, the path the recipe recommends, and assumes you're at home with `oc` and Kustomize.
+If you haven't picked a path yet, xref:overview/choose-a-path.adoc[Choose how to run OpenClaw] compares the raw manifests with claw-installer and the OpenShell sandbox.
+
+== The path through the Administrator guide
+
+Work through the pages in this order.
+Steps 1 to 4 end with the Control UI open in your browser, and steps 5 to 7 cover running the deployment from then on.
+
+. xref:admin/prerequisites.adoc[Check the prerequisites]: confirm that your cluster and your model endpoint meet the recipe's requirements, and find out which optional parts need cluster-admin.
+. xref:admin/configure-model.adoc[Configure the model endpoint and secrets]: enter your endpoint and its model ID in the ConfigMap or an overlay, put the gateway token and the API key into the Secret, and set the storage class.
+. xref:admin/deploy.adoc[Deploy OpenClaw]: create the namespace, apply the manifests or your overlay, and watch the init container and the gateway start until the log reports `[gateway] ready`.
+. xref:admin/access.adoc[Open the Control UI]: reach the gateway through a port-forward, or through the Route once you've added its address to the allowed origins and approved the browser by its request ID.
+. xref:admin/change-config.adoc[Change the configuration of a running gateway]: apply changes with `config patch`, because the ConfigMap only seeds the configuration on the first start.
+. xref:admin/tracing.adoc[Send traces to MLflow]: optionally deploy the `mlflow-tracing` overlay, whose OpenTelemetry collector sidecar forwards the gateway's traces to MLflow in Red Hat OpenShift AI (RHOAI).
+. xref:admin/maintain.adoc[Back up, upgrade, and remove]: back up the gateway's state, upgrade by applying new manifests, and see what deleting the PVC destroys.
+
+== Decide before you deploy
+
+Several choices end up in the files you apply, so it's worth settling them before the first `oc apply`.
+The reason is the way OpenClaw treats its configuration file, `openclaw.json`.
+The init container copies it from the ConfigMap only on the first start.
+From then on, the gateway owns the copy on the PVC, and you change it with `config patch` rather than through the manifests.
+
+For most of these choices, the recipe offers two places.
+You either edit the base manifests in `manifests/`, or you copy `overlays/example/` and edit the copy, which leaves the base manifests untouched.
+
+=== Namespace
+
+You set the namespace in one of two ways.
+Create the project with `oc new-project` and pass it to `oc apply -k manifests/` with `-n`, or set it in the `namespace:` field of your overlay's `kustomization.yaml`.
+The recipe's examples use `my-openclaw`, and so does this guide.
+With tracing, the namespace also becomes your MLflow workspace, and that's where you'll find the traces.
+
+=== Storage class
+
+The PVC `openclaw-state` holds the gateway's state and requests 5Gi from the storage class `gp3-csi`.
+Pick a block storage class such as `gp3-csi`, `managed-csi`, or `thin-csi`, and stay away from NFS: OpenClaw keeps its state in SQLite, which needs POSIX file locking.
+`oc get storageclass` lists the classes your cluster offers.
+If `gp3-csi` isn't among them, change `storageClassName` in `manifests/03-pvc.yaml`, or patch it in your overlay the way `overlays/example/` sets `managed-csi`.
+
+=== Model endpoint
+
+The gateway sends its model requests to an OpenAI-compatible endpoint, which can be vLLM, KServe, or an external API.
+The model behind that endpoint has to support structured tool calling, because OpenClaw relies on it.
+Not every model qualifies: some emit raw JSON instead of calling a tool.
+When vLLM serves the model directly, the recipe expects the server flags `--enable-auto-tool-choice` and `--tool-call-parser`, which xref:admin/prerequisites.adoc[Check the prerequisites] explains.
+This guide doesn't cover setting up the model server itself.
+
+Have these values ready before you configure the deployment:
+
+* The endpoint's base URL, which ends in `/v1`.
+* The exact model ID from the endpoint's `/v1/models` response.
+An OGX gateway in front of vLLM reports the ID with a `vllm/` prefix, while vLLM on its own reports the plain model name.
+* The API key, or `not-needed` for an endpoint that doesn't ask for one.
+
+=== Route or port-forward
+
+The manifests always create the Route `openclaw`, with TLS terminated at the router.
+What you decide is how browsers reach the gateway.
+
+A port-forward works without further configuration.
+`oc port-forward` makes the Control UI available at `http://localhost:18789` on your machine, and the gateway approves the pairing of a local browser by itself.
+
+The Route needs one configuration change first: its address goes into `gateway.controlUi.allowedOrigins`.
+After that, every browser that comes through the Route waits until you approve it by its request ID.
+Keep in mind that the Route makes the gateway reachable for anyone who can reach the cluster's router.
+The gateway token and the device approval are what keep everyone else out.
+xref:admin/access.adoc[Open the Control UI] walks through both ways in.
+
+=== Tracing
+
+Tracing to MLflow comes from a separate overlay, `overlays/mlflow-tracing/`.
+It builds on the base manifests and adds an OpenTelemetry collector sidecar, a ServiceAccount, and a RoleBinding to the `mlflow-integration` ClusterRole.
+The overlay needs RHOAI with MLflow, and RHOAI 3.3.1 doesn't ship that ClusterRole, so it has to be created first.
+xref:overview/choose-a-path.adoc#who-needs-cluster-admin[Who needs cluster-admin] explains why that step takes more than namespace access.
+
+Deciding on tracing before the first deployment saves you a step.
+If OpenClaw already runs in the namespace, the init container keeps the existing `openclaw.json`, so applying the overlay doesn't change the gateway's configuration by itself.
+You then patch the tracing settings into the running gateway and restart it.
+
+== Optional branches
+
+Two pages sit beside the main path, and you need them only in specific cases.
+
+xref:admin/install-openshell.adoc[Install OpenShell for sandboxes]::
+Developers who run OpenClaw in an OpenShell sandbox need an OpenShell gateway on the cluster.
+The page installs the Agent Sandbox controller and its CRDs, then the OpenShell Helm chart, and connects the `openshell` CLI to the new gateway.
+It's cluster-admin work: the Agent Sandbox CRDs are cluster-scoped, and the OpenShell chart creates a ClusterRole and a ClusterRoleBinding.
+
+xref:admin/deploy-installer.adoc[Deploy with claw-installer]::
+If your team prefers a web form, with an OpenShift login in front of the gateway, you can deploy with claw-installer instead of the raw manifests.
+The rest of this guide follows the raw manifests, so that page also lists where an installer deployment differs from them.
+
+== When you need details
+
+Two reference pages back up every step.
+xref:reference/troubleshooting.adoc[Troubleshooting] collects known problems and their fixes, from the Route's HTTP 403 to pairing trouble, along with the diagnostic commands.
+xref:reference/manifests.adoc[Manifest reference] describes every resource in `manifests/` and in the tracing overlay with its key fields.

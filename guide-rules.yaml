@@ -35,3 +35,16 @@ rules:
       - 'xref:admin/deploy-installer\.adoc'
       - 'xref:developer/run-in-sandbox\.adoc'
       - '(?i)single replica|one replica'
+  - glob: "content/modules/ROOT/pages/admin/index.adoc"
+    require_order:
+      - 'xref:admin/prerequisites\.adoc'
+      - 'xref:admin/configure-model\.adoc'
+      - 'xref:admin/deploy\.adoc'
+      - 'xref:admin/access\.adoc'
+      - 'xref:admin/change-config\.adoc'
+      - 'xref:admin/tracing\.adoc'
+      - 'xref:admin/maintain\.adoc'
+    require:
+      - 'xref:admin/install-openshell\.adoc'
+      - 'xref:admin/deploy-installer\.adoc'
+      - 'xref:reference/troubleshooting\.adoc'
