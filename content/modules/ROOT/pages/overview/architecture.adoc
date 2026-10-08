@@ -3,18 +3,18 @@
 // Sources:
 // starter-kits:agents/openclaw/deployment/manifests/kustomization.yaml:4-10
 // starter-kits:agents/openclaw/deployment/manifests/01-secret.yaml:4,10-11
-// starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:4,12-20,31-37,52-57
+// starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:4,12-20,25,31-47,52-57
 // starter-kits:agents/openclaw/deployment/manifests/03-pvc.yaml:4,8-15
 // starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:1-140
 // starter-kits:agents/openclaw/deployment/manifests/05-service.yaml:4,8-15
 // starter-kits:agents/openclaw/deployment/manifests/06-route.yaml:4,7-21
 // starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/kustomization.yaml:5-24
 // starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/configmap-patch.yaml:1-2,50-67
-// starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/deployment-patch.yaml:8-31
+// starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/deployment-patch.yaml:8-31,47-53
 // starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/otel-collector-config.yaml:16-26,46-57
-// starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/rbac.yaml:12-31
-// starter-kits:agents/openclaw/deployment/docs/mlflow-tracing.md:7,35,52-54,196-198
-// starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:13-15,120-121,127-134,169,177-179,183,192,199,201,205,213,232-235
+// starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/rbac.yaml:4,7,12-31
+// starter-kits:agents/openclaw/deployment/docs/mlflow-tracing.md:7,35,50,52-54,196-198
+// starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:13-15,120-121,127-134,169,177-179,183,192,199,201,205,213,217-221,232-235
 // starter-kits:agents/openclaw/deployment/docs/troubleshooting.md:264-275
 // starter-kits:agents/openclaw/deployment/docs/installer-deployment.md:438
 // openclaw:Dockerfile:458-459
@@ -30,8 +30,9 @@ Along the way, we'll look at where the configuration and the state live, and how
 
 image::deployment-architecture.svg["Deployment architecture: a browser reaches the gateway container through the Route and the Service openclaw on port 18789, the init container seeds openclaw.json from the ConfigMap onto the PVC openclaw-state mounted at /home/node, the gateway calls the model endpoint, and the optional otel-collector sidecar sends traces to RHOAI MLflow",role=expand]
 
-The solid parts of the diagram are what the base manifests create.
-The dashed parts come with the optional tracing overlay.
+The solid boxes inside the namespace box are what the manifests create.
+The browser, the model endpoint, and RHOAI MLflow sit outside it.
+Dashed parts only come into play with the optional tracing overlay.
 
 == What the manifests create
 
@@ -48,7 +49,7 @@ The file `manifests/kustomization.yaml` lists six resources, and `oc apply -k ma
 |The starting configuration, one file called `openclaw.json`
 
 |PersistentVolumeClaim `openclaw-state`
-|Everything OpenClaw keeps, mounted at `/home/node`
+|OpenClaw's state, mounted at `/home/node`
 
 |Deployment `openclaw`
 |One Pod with the init container `init-config` and the container `gateway`
@@ -102,7 +103,7 @@ They're applied once, when the box is opened, and after that the device keeps it
 The init container `init-config` runs the same pinned OpenClaw image as the gateway.
 On the first start, it copies `openclaw.json` to `~/.openclaw/openclaw.json` on the PVC, and on every later start it finds that copy and keeps it.
 From then on, OpenClaw owns the copy on the PVC and keeps its runtime changes there.
-It even refuses to start when that copy was replaced behind its back.
+OpenClaw even refuses to start when that copy was replaced behind its back.
 
 [WARNING]
 ====
@@ -123,7 +124,7 @@ The PVC `openclaw-state` requests 5Gi of ReadWriteOnce storage from the storage 
 OpenClaw keeps its state in SQLite, which needs POSIX file locking, so pick a block storage class and stay away from NFS.
 If your cluster's block storage class has another name, an overlay can change it without touching the base manifests.
 
-Everything OpenClaw keeps lives under `~/.openclaw` on that volume: `openclaw.json`, the `workspace` directory, and the state database.
+OpenClaw's state lives under `~/.openclaw` on that volume: `openclaw.json`, the `workspace` directory, and the state database.
 OpenClaw's own documentation is blunt about it.
 Lose the state directory, and you lose sessions, credentials, logs, and config.
 
@@ -174,13 +175,13 @@ None of them probes `/`, because the Control UI answers unknown paths with 200.
 
 OpenClaw emits OpenTelemetry traces on its own, through its `diagnostics-otel` plugin.
 The `mlflow-tracing` overlay collects them and sends them to the shared MLflow instance of Red Hat OpenShift AI (RHOAI).
-It builds on the base manifests and adds the dashed parts of the diagram:
+It builds on the base manifests, replaces `openclaw.json` in the ConfigMap `openclaw-config`, patches the Deployment, and adds resources of its own:
 
-* A new `openclaw.json` in the ConfigMap that enables the `diagnostics-otel` plugin and points it at `http://localhost:4318`.
-* An `otel-collector` sidecar in the Pod.
+* The new `openclaw.json` enables the `diagnostics-otel` plugin and points it at `http://localhost:4318`.
+* An `otel-collector` sidecar joins the Pod, with its configuration in the new ConfigMap `otel-collector-config`.
 The gateway sends spans to it over OTLP with `http/protobuf`, on localhost port 4318.
-* The ServiceAccount `openclaw-tracing`, which the Pod runs as.
-* The RoleBinding `openclaw-tracing-mlflow`, which binds an `mlflow-integration` ClusterRole to that ServiceAccount.
+* The new ServiceAccount `openclaw-tracing` is what the Pod runs as from then on.
+* The new RoleBinding `openclaw-tracing-mlflow` binds an `mlflow-integration` ClusterRole to that ServiceAccount.
 
 The collector exports the traces to RHOAI MLflow in the namespace `redhat-ods-applications`, on port 8443.
 It authenticates with the ServiceAccount's token as a bearer token.
