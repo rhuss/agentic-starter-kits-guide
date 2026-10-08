@@ -1,0 +1,6 @@
+name: guide
+title: "OpenClaw on OpenShift"
+version: ~
+start_page: ROOT:index.adoc
+nav:
+- modules/ROOT/nav.adoc

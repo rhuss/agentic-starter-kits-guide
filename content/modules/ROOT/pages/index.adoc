@@ -1,0 +1,6 @@
+= OpenClaw on OpenShift
+:guide-no-sources:
+
+include::partial$baseline-note.adoc[]
+
+This page is replaced by the guide's start page during the first create run.

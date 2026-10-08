@@ -1,0 +1,23 @@
+# Pinned sources and change requests (the baseline). Written by tools/guide/fetch.py.
+captured: '2026-10-08'
+sources:
+  - id: starter-kits
+    repo: red-hat-data-services/agentic-starter-kits
+    ref: d3cbd04b893b8df42ae32e867599ba060015b01e
+    commit: d3cbd04b893b8df42ae32e867599ba060015b01e
+  - id: openclaw
+    repo: git@github.com:rhuss/openclaw.git
+    ref: fc23bc864e4553c2d215e479eeec47b67a0bf943
+    commit: fc23bc864e4553c2d215e479eeec47b67a0bf943
+    attributes:
+      version: 2026.9.8
+  - id: openshell
+    repo: NVIDIA/OpenShell
+    ref: v0.1.2
+    commit: 6648bd0c290efbc41ba131ee9831ee45cd431f94
+    attributes:
+      version: 0.1.2
+  - id: claw-installer
+    repo: sallyom/claw-installer
+    ref: HEAD
+    commit: fdcd761faee6403d22db66bb77ddaa05e9c30d2e

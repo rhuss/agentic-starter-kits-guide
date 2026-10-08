@@ -1,0 +1,80 @@
+# Guide project configuration (cc-guide schema 1).
+# Written by /guide:create from the intake interview; edit by hand when needed and
+# run `uv run tools/guide/guidecfg.py validate` afterwards. Unknown keys are errors.
+schema: 1
+
+# Shown on the site header and the PDF title page.
+title: "OpenClaw on OpenShift"
+
+# Output adapter: antora, mkdocs, or gfm. Fixed after create.
+format: "antora"
+
+# Reader roles. Each persona has its own section and an entry page
+# (path without extension, relative to the adapter's page directory).
+personas:
+  - id: admin
+    title: Administrator
+    start: admin/index
+  - id: user
+    title: User
+    start: user/index
+  - id: developer
+    title: Developer
+    start: developer/index
+
+# Navigation sections in reading order. `voice` is a cc-prose voice profile when
+# cc-prose is installed, otherwise one of the built-in styles: concepts, technical, reference.
+sections:
+  - id: overview
+    title: Overview
+    voice: conversational
+  - id: admin
+    title: Administrator guide
+    voice: technical
+  - id: user
+    title: User guide
+    voice: tutorial
+  - id: developer
+    title: Developer guide
+    voice: technical
+  - id: reference
+    title: Reference
+    voice: reference
+
+# fast (final review only), standard (per-page reviews, the default), or strict
+# (standard plus the claim ledger). A run can override it with --rigor.
+rigor: standard
+
+internal:
+  # true adds an internal part that never reaches the shareable build or PDF.
+  enabled: false
+  confidential_terms: []
+  confidential_patterns: []
+
+# Optional cluster connections for /guide:validate. Only references are stored:
+# the kubeconfig content is never read into the project. Set disposable: true only
+# for a throwaway cluster; it unlocks the full (mutating) validation tier.
+clusters:
+  cntbh:
+    kubeconfig: ~/.kube/config
+    context: default/api-cluster-cntbh-dyn-redhatworkshops-io:6443/admin
+    disposable: true
+
+# Extra read-only command patterns for /guide:validate (additive only).
+validate:
+  extra_queries: []
+
+# Scheduled drift check (.github/workflows/guide-drift.yml): "off" or a cron expression.
+drift:
+  schedule: "off"
+
+upstream:
+  target: github
+
+# Branding (antora only). See the plugin's docs/branding.md for the accent color
+# and the overlay directory ui/supplemental/.
+branding:
+  logo_text: Agent Starter Kits
+  footer:
+    text: Agentic Starter Kits on GitHub
+    url: https://github.com/red-hat-data-services/agentic-starter-kits
