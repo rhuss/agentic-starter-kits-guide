@@ -55,3 +55,12 @@ rules:
       - '--tool-call-parser'
       - '--enable-auto-tool-choice'
       - '(?i)NFS'
+  - glob: "content/modules/ROOT/pages/admin/configure-model.adoc"
+    require:
+      - '/v1/models'
+      - 'vllm/vllm/'
+      - 'VLLM_API_KEY'
+      - 'OPENCLAW_GATEWAY_TOKEN'
+      - 'storageClassName|storage class'
+      - 'oc get storageclass'
+      - '^Check:'

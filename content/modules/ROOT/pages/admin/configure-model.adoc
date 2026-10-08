@@ -1,5 +1,319 @@
 = Configure the model endpoint and secrets
-:guide-no-sources:
 
-// STUB
-This page is not written yet.
+// Sources:
+// starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:25-59,63-68,70-114,116-121,123-134,177
+// starter-kits:agents/openclaw/deployment/README.md:22-31,82-89
+// starter-kits:agents/openclaw/deployment/manifests/01-secret.yaml:1-11
+// starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:4,8-11,18-20,25,34-45
+// starter-kits:agents/openclaw/deployment/manifests/03-pvc.yaml:4,10-12
+// starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:42-50,80-96
+// starter-kits:agents/openclaw/deployment/overlays/example/kustomization.yaml:5-24
+// starter-kits:agents/openclaw/deployment/overlays/example/configmap-patch.yaml:1-52
+// starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/configmap-patch.yaml:36
+// openclaw:docs/providers/vllm.md:13-15,37,97
+// openclaw:extensions/vllm/openclaw.plugin.json:31-38
+// openclaw:src/agents/model-auth-provider.ts:584-614
+// openclaw:docs/concepts/models.md:400
+// openclaw:docs/gateway/index.md:76
+// openclaw:docs/gateway/security/network-exposure.md:106
+// openclaw:src/gateway/known-weak-gateway-secrets.ts:7-10,17-19,49-56
+
+Before the first `oc apply`, three objects in the recipe need values from you.
+The ConfigMap `openclaw-config` names the model endpoint and the model, the Secret `openclaw-secrets` holds the gateway token and the endpoint's API key, and the PersistentVolumeClaim (PVC) `openclaw-state` names the storage class.
+The ConfigMap needs the most care before the first start.
+The init container copies its `openclaw.json` to the PVC only when the PVC doesn't hold one yet, so later edits to the ConfigMap don't reach a running gateway.
+For changes after the first start, see xref:admin/change-config.adoc[Change the configuration of a running gateway].
+
+All paths on this page are relative to {starter-kits-tree}/agents/openclaw/deployment[`agents/openclaw/deployment/`] in your checkout of the Agentic Starter Kits repository.
+You either edit the base manifests in `manifests/` or a copy of `overlays/example/`.
+xref:admin/index.adoc#decide-before-you-deploy[Decide before you deploy] describes both options, together with the choice of namespace.
+
+== Where each setting goes
+
+[cols="2,2,3",options="header"]
+|===
+|Setting
+|Base manifests
+|Overlay (a copy of `overlays/example/`)
+
+|Model endpoint and model ID
+|`manifests/02-configmap.yaml`
+|`configmap-patch.yaml` in the overlay
+
+|Gateway token and API key
+|`manifests/01-secret.yaml`
+|`manifests/01-secret.yaml`, because the example overlay doesn't patch the Secret
+
+|Storage class
+|`manifests/03-pvc.yaml`
+|The PersistentVolumeClaim patch in the overlay's `kustomization.yaml`
+|===
+
+The overlay's `configmap-patch.yaml` doesn't change single fields.
+It carries a complete `openclaw.json`, which replaces the file from the base ConfigMap as a whole.
+Apart from its sample endpoint and model, the patch's `openclaw.json` matches the base file, so you change the same fields either way.
+A setting that you add to the base ConfigMap later doesn't reach an overlay deployment unless you add it to the patch, too.
+
+== How the model ID becomes a model reference
+
+The ConfigMap names the model in two places, and each follows its own rule.
+
+`models.providers.vllm.models[].id`::
+The model ID exactly as the endpoint reports it in its `/v1/models` response.
+OpenClaw sends this ID to the endpoint in its API requests.
+The recipe sets `name` to the same value.
+
+`agents.defaults.model`::
+The model reference the agents use, in the form `<provider>/<model-id>`.
+The recipe's provider is `vllm`, so the reference is `vllm/` followed by the model ID.
+
+OpenClaw splits a model reference at its first `/`.
+Everything after that slash is the model ID, even when the ID contains slashes of its own.
+
+This rule matters behind OGX.
+vLLM on its own reports the plain model name, while an OGX gateway in front of vLLM reports the ID with a `vllm/` prefix.
+With the recipe's example model, the values look like this:
+
+[cols="2,2,2,3",options="header"]
+|===
+|Endpoint
+|`id` in `/v1/models`
+|`models[].id` and `name`
+|`agents.defaults.model`
+
+|vLLM, called directly
+|`gpt-oss-120b`
+|`gpt-oss-120b`
+|`vllm/gpt-oss-120b`
+
+|OGX in front of vLLM
+|`vllm/gpt-oss-120b`
+|`vllm/gpt-oss-120b`
+|`vllm/vllm/gpt-oss-120b`
+|===
+
+The double prefix in `vllm/vllm/<model>` is intentional.
+The first `vllm` is OpenClaw's provider, and the rest is the ID that OGX reports, so don't shorten it to a single `vllm/`.
+In the ConfigMap, the placeholder `YOUR-MODEL-ID` sits in all three fields, and `agents.defaults.model` already reads `vllm/YOUR-MODEL-ID`.
+Replace the placeholder with the exact ID everywhere, and both cases come out right.
+
+Besides the ID, the model entry sets `contextWindow` to 32768 and `maxTokens` to 4096.
+The recipe asks you to change only the endpoint and the model ID.
+
+== Why the API key goes into the Secret
+
+The Deployment passes both entries of the Secret `openclaw-secrets` to the gateway container as environment variables, `OPENCLAW_GATEWAY_TOKEN` and `VLLM_API_KEY`.
+`VLLM_API_KEY` is the variable that OpenClaw's vLLM provider takes its API key from.
+The `openclaw.json` in the ConfigMap has an API key field of its own, `models.providers.vllm.apiKey`, which the recipe sets to `not-needed`.
+
+When both are present, the environment variable wins.
+OpenClaw looks up the provider's environment variable before it falls back to the `apiKey` from the configuration, and sends the value it finds as the bearer token.
+That holds even when `apiKey` contains a literal key: OpenClaw uses the configured value only when `VLLM_API_KEY` isn't set.
+Because the Deployment always sets the variable from the Secret, the Secret decides which key reaches your model endpoint.
+Put the key into the Secret.
+Editing `apiKey` in the ConfigMap doesn't change what the gateway sends.
+
+[NOTE]
+====
+The tracing overlay's `openclaw.json` sets `apiKey` to `+${VLLM_API_KEY}+`, as OpenClaw's vLLM documentation does.
+That's a reference to the same environment variable, so the Secret's value is what gets sent there, too.
+====
+
+The gateway token comes from the environment in the same way.
+The ConfigMap sets `gateway.auth.mode` to `token` without a token, and the gateway takes it from `OPENCLAW_GATEWAY_TOKEN`.
+Users paste this token into the Control UI when they connect, as xref:admin/access.adoc[Open the Control UI] shows.
+
+[#find-the-model-id]
+== Find the model ID
+
+The `id` in the ConfigMap has to match the endpoint's ID character for character, so read it from the endpoint rather than deriving it from the model's name.
+
+. Query the endpoint's model list.
+Replace `<endpoint-host>` with the host name of your vLLM server or OGX gateway.
++
+Check: the response lists your model under `data`, with its `id`.
++
+[source,bash]
+----
+curl -s https://<endpoint-host>/v1/models | python3 -m json.tool
+----
+// expect: contains '"id"'
+
+. Note the value of `id`.
+vLLM called directly returns the plain name, such as `gpt-oss-120b`, and OGX returns the name with its prefix, such as `vllm/gpt-oss-120b`.
+
+== Set the model endpoint
+
+Enter the endpoint and the model ID in one of two places: the base ConfigMap, or the ConfigMap patch of your own overlay.
+
+=== In the base manifests
+
+. Open `manifests/02-configmap.yaml` and replace the placeholders in `openclaw.json`:
++
+--
+* `YOUR-VLLM-OR-OGX-ENDPOINT` in `baseUrl` with the host name of your endpoint, so that `baseUrl` reads `+https://<endpoint-host>/v1+`.
+* `YOUR-MODEL-ID` in `agents.defaults.model`, `id`, and `name` with the model ID from <<find-the-model-id>>.
+--
++
+These are the fields you change, shown without the settings around them:
++
+[source,json]
+----
+"agents": {
+  "defaults": {
+    "model": "vllm/<model-id>"
+  }
+},
+"models": {
+  "providers": {
+    "vllm": {
+      "baseUrl": "https://<endpoint-host>/v1",
+      "models": [{
+        "id": "<model-id>",
+        "name": "<model-id>"
+      }]
+    }
+  }
+}
+----
+
+. Render the manifests and look at the model fields.
+If `oc kustomize` also prints a warning that `commonLabels` is deprecated, that comes from the recipe's base `kustomization.yaml` and doesn't affect the result.
++
+Check: `model`, `baseUrl`, and `id` show your endpoint and model ID, and no `YOUR-` placeholder is left.
++
+[source,bash]
+----
+oc kustomize manifests/ | grep -E '"(model|baseUrl|id)":'
+----
+// expect: contains "baseUrl" and not-contains "YOUR-"
+
+=== In an overlay
+
+. Copy the example overlay.
+`my-env` is the name the recipe uses for the copy.
++
+Check: the new directory holds `configmap-patch.yaml` and `kustomization.yaml`.
++
+[source,bash]
+----
+cp -r overlays/example overlays/my-env
+ls overlays/my-env
+----
+// expect: contains "configmap-patch.yaml" and contains "kustomization.yaml"
+
+. Open `overlays/my-env/configmap-patch.yaml` and replace the sample values:
++
+--
+* `+https://my-vllm-endpoint.apps.my-cluster.example.com/v1+` in `baseUrl` with `+https://<endpoint-host>/v1+`.
+* `my-model` in `agents.defaults.model`, `id`, and `name` with your model ID, keeping the `vllm/` provider prefix in `agents.defaults.model`.
+--
++
+Leave the other settings in the file, because the patch replaces the whole `openclaw.json`.
+
+. Render the overlay and look at the model fields.
++
+Check: `model`, `baseUrl`, and `id` show your endpoint and model ID, and none of the sample values is left.
++
+[source,bash]
+----
+oc kustomize overlays/my-env | grep -E '"(model|baseUrl|id)":'
+----
+// expect: contains "baseUrl" and not-contains "my-model" and not-contains "my-vllm-endpoint"
+
+== Set the gateway token and the API key
+
+The Secret ships with two placeholders: `CHANGE-ME` for the gateway token and `not-needed` for the API key.
+The API key depends on your endpoint, but the token has to change in every case.
+
+[CAUTION]
+====
+The gateway doesn't reject `CHANGE-ME`.
+At startup it refuses only a blank token, the strings `undefined` and `null`, and two placeholders from OpenClaw's own examples.
+If you forget to replace the recipe's placeholder, `CHANGE-ME` becomes the gateway's token.
+====
+
+. Generate a token.
+OpenClaw's documentation suggests `openssl rand -hex 32`, and its security audit warns about tokens shorter than 24 characters.
++
+Check: the command prints 64 hexadecimal characters.
++
+[source,bash]
+----
+openssl rand -hex 32
+----
+// expect: matches /^[0-9a-f]{64}$/
+
+. Open `manifests/01-secret.yaml` and enter the token and the API key:
++
+[source,yaml]
+----
+stringData:
+  # Replace with your own token
+  OPENCLAW_GATEWAY_TOKEN: "<gateway-token>"
+  VLLM_API_KEY: "<api-key>"
+----
++
+For an endpoint without authentication, keep `not-needed` as the API key.
+OpenClaw's vLLM documentation states that any non-empty value works when the server doesn't enforce authentication.
+
+. Make sure the placeholder token is gone.
++
+Check: `grep` finds nothing and exits with status 1.
++
+[source,bash]
+----
+grep -n 'CHANGE-ME' manifests/01-secret.yaml
+----
+// expect: exit 1
+
+== Set the storage class
+
+The PVC `openclaw-state` asks for the storage class `gp3-csi`.
+If your cluster doesn't offer it, pick another block storage class.
+xref:admin/prerequisites.adoc[Check the prerequisites] explains why it has to be block storage and not NFS.
+A copy of the example overlay switches the PVC to `managed-csi`, so check the value there even if `gp3-csi` suits your cluster.
+
+. List the storage classes of your cluster.
++
+Check: the list contains the block storage class you want to use, such as `gp3-csi`, `managed-csi`, or `thin-csi`.
++
+[source,bash]
+----
+oc get storageclass
+----
+// expect: lines >= 2
+
+. Set the class.
+In the base manifests, change `storageClassName` in `manifests/03-pvc.yaml`:
++
+[source,yaml]
+----
+  storageClassName: <storage-class>
+----
++
+In an overlay, change `value` in the PersistentVolumeClaim patch of `overlays/my-env/kustomization.yaml`:
++
+[source,yaml]
+----
+  - target:
+      kind: PersistentVolumeClaim
+      name: openclaw-state
+    patch: |
+      - op: replace
+        path: /spec/storageClassName
+        value: <storage-class>
+----
+
+. Render the manifests and look at the storage class.
+For an overlay, replace `manifests/` with `overlays/my-env`.
++
+Check: `storageClassName` shows the class you chose.
++
+[source,bash]
+----
+oc kustomize manifests/ | grep storageClassName
+----
+// expect: contains "storageClassName: "
+
+With the three objects filled in, continue with xref:admin/deploy.adoc[Deploy OpenClaw], which creates the namespace and applies `manifests/` or your overlay.
