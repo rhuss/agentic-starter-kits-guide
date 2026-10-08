@@ -13,3 +13,13 @@ rules:
   - glob: "content/modules/ROOT/pages/user/*.adoc"
     forbid:
       - '\boc (login|get|exec|rsh|port-forward|apply|annotate|delete)\b'
+  - glob: "content/modules/ROOT/pages/index.adoc"
+    require:
+      - 'include::(ROOT:)?partial\$baseline-note\.adoc\[\]'
+      - 'xref:admin/index\.adoc'
+      - 'xref:user/index\.adoc'
+      - 'xref:developer/index\.adoc'
+      - 'xref:overview/choose-a-path\.adoc'
+      - '\{openclaw-version\}'
+    forbid:
+      - 'guide-no-sources'

@@ -1,6 +1,102 @@
 = OpenClaw on OpenShift
-:guide-no-sources:
+
+// Sources:
+// starter-kits:agents/openclaw/deployment/README.md:5-12,19,24-31,67-100,105,110-157,165
+// starter-kits:agents/openclaw/templates/openclaw_agent/README.md:1-5,16-21
+// starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:1-10,23-24,67-68
+// starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:18-20
+// starter-kits:agents/openclaw/deployment/manifests/01-secret.yaml:10
+// starter-kits:agents/openclaw/deployment/docs/mlflow-tracing.md:7,41
+// starter-kits:agents/openclaw/deployment/docs/installer-deployment.md:5,77-102
+// starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:120,167-168
+// starter-kits:agents/openclaw/deployment/Containerfile.openshell:9,13-33
+// starter-kits:sandboxes/base/README.md:7-11
+// claw-installer:README.md:3-13
+// claw-installer:provider-plugins/openshift/templates/oauth-proxy-container.yaml:1-7
+// claw-installer:src/server/deployers/k8s-helpers.ts:36-38,60-64
+// openshell:docs/kubernetes/openshift.mdx:50-72
+
+The {starter-kits-repo}[Agentic Starter Kits] ship a recipe for running https://github.com/openclaw/openclaw[OpenClaw] on Red Hat OpenShift, with your model served by vLLM.
+The recipe describes the agent as an open-source AI coding assistant with a web interface.
+A built-in gateway routes every request to an OpenAI-compatible model endpoint, so the model can come from vLLM, KServe, or an external API.
+
+On OpenShift, the gateway runs as a Deployment with a single replica.
+Its state lives on a PersistentVolumeClaim, and a Service and a Route make it reachable.
+The recipe has a second piece, too: an image that puts the same agent into an OpenShell sandbox.
+All of it lives in {starter-kits-tree}/agents/openclaw[`agents/openclaw/`].
+The `deployment/` directory holds the manifests, the overlays, the recipe's own docs, and the sandbox image, while `templates/openclaw_agent/` holds a short agent description.
+
+This page shows you the three ways to run OpenClaw and points you to the part of the guide that fits your role.
+
+== Three ways to run it
+
+The recipe gives you three ways to get OpenClaw running.
+Not sure which one fits?
+xref:overview/choose-a-path.adoc[Choose how to run OpenClaw] puts them side by side.
+
+=== Raw manifests
+
+The recipe recommends this way, and the Administrator guide follows it.
+The manifests in `agents/openclaw/deployment/manifests/` create a Secret for the gateway token, a ConfigMap with the model endpoint and gateway configuration, a PersistentVolumeClaim, the Deployment, a ClusterIP Service, and a TLS edge Route.
+You fill in your model endpoint and token, then apply everything with `oc apply -k manifests/`.
+Kustomize overlays adapt the model endpoint, storage class, and namespace to your environment.
+The `mlflow-tracing` overlay adds an OpenTelemetry collector sidecar that forwards traces to the shared MLflow instance of Red Hat OpenShift AI.
+The gateway image is pinned by digest to OpenClaw {openclaw-version}.
+Browsers authenticate with the token from the Secret, and no OAuth proxy sits in front of the gateway.
+
+=== claw-installer
+
+{claw-installer-repo}[claw-installer] is a web application that you start on your own machine.
+You open it in the browser, fill in a form, and its OpenShift plugin deploys OpenClaw for you.
+It also adds an OAuth proxy sidecar, so people sign in with their OpenShift account before they reach the gateway.
+The recipe lists the installer as an alternative and recommends the raw manifests.
+Keep one difference in mind: unless you set an image, the installer deploys a `:latest` tag such as `ghcr.io/openclaw/openclaw:latest` instead of a pinned digest.
+xref:admin/deploy-installer.adoc[Deploy with claw-installer] covers this path.
+
+=== OpenShell sandbox
+
+The third way runs OpenClaw inside an {openshell-repo}[OpenShell] sandbox instead of the recipe's manifests.
+The recipe's `Containerfile.openshell` builds on the shared sandbox base image from `sandboxes/base/`, which brings UBI 10 minimal, a `sandbox` user, and a default sandbox policy.
+On top of that, it adds Node.js and OpenClaw {openclaw-version}.
+You build and push the image yourself, because an OpenShell gateway on the cluster pulls sandbox images from a registry.
+The OpenClaw gateway then runs as the sandbox's main process, and `openshell forward start` brings its port to your machine.
+One catch: the sandbox policy blocks all network egress by default.
+You add a rule that lets OpenClaw reach your model endpoint.
+The recipe tested this path with OpenShell {openshell-version}, and its agent description presents the sandbox mode as one for experimentation.
+Your cluster needs an OpenShell gateway first, and xref:admin/install-openshell.adoc[Install OpenShell for sandboxes] sets one up.
+
+== Support
+
+[IMPORTANT]
+====
+The OpenClaw container image (`ghcr.io/openclaw/openclaw`) is built and published by the OpenClaw upstream community, not by Red Hat.
+It hasn't been built, scanned, or validated according to Red Hat standards, so use it at your own discretion.
+The manifests repeat this warning next to both OpenClaw image references in the Deployment.
+According to the recipe, a Red Hat supported image may follow in a future release.
+====
+
+== Find your part of the guide
+
+The guide has one part for each kind of reader, and each part opens with an overview page.
+
+Administrator::
+You deploy OpenClaw on OpenShift and keep it running, from the model endpoint and the Secret to tracing, upgrades, and removal.
+Start with the xref:admin/index.adoc[Administrator guide].
+
+User::
+You chat with OpenClaw in its Control UI after an administrator has deployed it, and you don't need access to the cluster.
+Start with the xref:user/index.adoc[User guide].
+
+Developer::
+You build the sandbox image, run OpenClaw in an OpenShell sandbox, or extend the recipe.
+Start with the xref:developer/index.adoc[Developer guide].
+
+Want to see how the pieces connect before you pick?
+xref:overview/architecture.adoc[How the deployment fits together] walks through what the manifests create.
+
+== What this guide is based on
+
+The guide describes the recipe with OpenClaw {openclaw-version} and OpenShell {openshell-version}.
+It was checked against the source revisions in the note below, and where the recipe's documents disagree with its code, the guide follows the code.
 
 include::partial$baseline-note.adoc[]
-
-This page is replaced by the guide's start page during the first create run.
