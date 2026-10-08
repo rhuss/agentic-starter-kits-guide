@@ -44,7 +44,7 @@ Steps 1 to 4 end with the Control UI open in your browser, and steps 5 to 7 cove
 == Decide before you deploy
 
 Several choices end up in the files you apply, so it's worth settling them before the first `oc apply`.
-The reason is the way OpenClaw treats its configuration file, `openclaw.json`.
+For the settings that land in `openclaw.json`, OpenClaw's configuration file, timing matters even more.
 The init container copies it from the ConfigMap only on the first start.
 From then on, the gateway owns the copy on the PVC, and you change it with `config patch` rather than through the manifests.
 
@@ -53,8 +53,8 @@ You either edit the base manifests in `manifests/`, or you copy `overlays/exampl
 
 === Namespace
 
-You set the namespace in one of two ways.
-Create the project with `oc new-project` and pass it to `oc apply -k manifests/` with `-n`, or set it in the `namespace:` field of your overlay's `kustomization.yaml`.
+Create the project first with `oc new-project`, whichever way you apply the manifests.
+Then pass it to `oc apply -k manifests/` with `-n`, or set it in the `namespace:` field of your overlay's `kustomization.yaml`.
 The recipe's examples use `my-openclaw`, and so does this guide.
 With tracing, the namespace also becomes your MLflow workspace, and that's where you'll find the traces.
 
@@ -110,7 +110,7 @@ You then patch the tracing settings into the running gateway and restart it.
 Two pages sit beside the main path, and you need them only in specific cases.
 
 xref:admin/install-openshell.adoc[Install OpenShell for sandboxes]::
-Developers who run OpenClaw in an OpenShell sandbox need an OpenShell gateway on the cluster.
+Developers who run OpenClaw in OpenShell sandboxes on the cluster need an OpenShell gateway there.
 The page installs the Agent Sandbox controller and its CRDs, then the OpenShell Helm chart, and connects the `openshell` CLI to the new gateway.
 It's cluster-admin work: the Agent Sandbox CRDs are cluster-scoped, and the OpenShell chart creates a ClusterRole and a ClusterRoleBinding.
 
