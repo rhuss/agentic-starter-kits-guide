@@ -1,5 +1,201 @@
 = How the deployment fits together
-:guide-no-sources:
 
-// STUB
-This page is not written yet.
+// Sources:
+// starter-kits:agents/openclaw/deployment/manifests/kustomization.yaml:4-10
+// starter-kits:agents/openclaw/deployment/manifests/01-secret.yaml:4,10-11
+// starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:4,12-20,31-37,52-57
+// starter-kits:agents/openclaw/deployment/manifests/03-pvc.yaml:4,8-15
+// starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:1-140
+// starter-kits:agents/openclaw/deployment/manifests/05-service.yaml:4,8-15
+// starter-kits:agents/openclaw/deployment/manifests/06-route.yaml:4,7-21
+// starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/kustomization.yaml:5-24
+// starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/configmap-patch.yaml:1-2,50-67
+// starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/deployment-patch.yaml:8-31
+// starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/otel-collector-config.yaml:16-26,46-57
+// starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/rbac.yaml:12-31
+// starter-kits:agents/openclaw/deployment/docs/mlflow-tracing.md:7,35,52-54,196-198
+// starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:13-15,120-121,127-134,169,177-179,183,192,199,201,205,213,232-235
+// starter-kits:agents/openclaw/deployment/docs/troubleshooting.md:264-275
+// starter-kits:agents/openclaw/deployment/docs/installer-deployment.md:438
+// openclaw:Dockerfile:458-459
+// openclaw:docker-entrypoint.mjs:72-116
+// openclaw:gateway-run-argv.mjs:33-46
+// openclaw:docs/install/docker.md:230-234,247-249
+// openclaw:docs/gateway/doctor/state-and-sessions.md:123
+// openclaw:docs/providers/vllm.md:9,15
+
+Before you deploy anything, it helps to know what you're about to create.
+This page walks through what `oc apply -k manifests/` puts into your namespace and how a request travels from your browser to the model.
+Along the way, we'll look at where the configuration and the state live, and how traces reach MLflow when you turn tracing on.
+
+image::deployment-architecture.svg["Deployment architecture: a browser reaches the gateway container through the Route and the Service openclaw on port 18789, the init container seeds openclaw.json from the ConfigMap onto the PVC openclaw-state mounted at /home/node, the gateway calls the model endpoint, and the optional otel-collector sidecar sends traces to RHOAI MLflow",role=expand]
+
+The solid parts of the diagram are what the base manifests create.
+The dashed parts come with the optional tracing overlay.
+
+== What the manifests create
+
+The file `manifests/kustomization.yaml` lists six resources, and `oc apply -k manifests/` creates all of them:
+
+[cols="1,2"]
+|===
+|Resource |What it's for
+
+|Secret `openclaw-secrets`
+|The gateway token and the API key for your model endpoint
+
+|ConfigMap `openclaw-config`
+|The starting configuration, one file called `openclaw.json`
+
+|PersistentVolumeClaim `openclaw-state`
+|Everything OpenClaw keeps, mounted at `/home/node`
+
+|Deployment `openclaw`
+|One Pod with the init container `init-config` and the container `gateway`
+
+|Service `openclaw`
+|A ClusterIP Service on port 18789
+
+|Route `openclaw`
+|An HTTPS address for browsers outside the cluster
+|===
+
+Notice what's missing: the model.
+You bring your own vLLM-compatible endpoint, either a vLLM server or an OGX gateway in front of vLLM.
+
+== Follow a request from the browser to the model
+
+Let's trace one chat message through the diagram, from left to right.
+
+Your browser opens the Control UI at the Route's HTTPS address.
+The Route terminates TLS at the edge and passes the request to the Service `openclaw`, which forwards port 18789 to the same port on the gateway container.
+That container runs the OpenClaw gateway.
+It serves the Control UI and checks your gateway token.
+For the answer, the gateway calls your model endpoint through the OpenAI-compatible API (`openai-completions` in the configuration), at the `baseUrl` from `openclaw.json`.
+
+One setting on the Route deserves a closer look.
+The annotation `haproxy.router.openshift.io/set-forwarded-headers: never` tells the router not to add `X-Forwarded-*` headers.
+OpenClaw answers a request that carries forwarded headers from a proxy outside `gateway.trustedProxies` with HTTP 403 (`proxy_attribution_required`), so the router has to leave them out.
+Why not trust the router instead?
+On OVN-Kubernetes, the kubelet's health probes come from the same node addresses as the router, and the gateway would then reject the probes as well.
+
+A browser needs two more things before it gets in through the Route.
+The gateway has to accept the Route's address as an allowed origin, and a browser that comes through the Route needs a device approval on top of the token.
+xref:admin/access.adoc[Open the Control UI] covers both, along with the port-forward that works without either.
+
+== Configuration: the Secret, the ConfigMap, and a one-time copy
+
+The Secret `openclaw-secrets` holds two values.
+`OPENCLAW_GATEWAY_TOKEN` is the token you paste into the Control UI.
+`VLLM_API_KEY` is the API key for your model endpoint, and `not-needed` works for an endpoint without authentication.
+The Deployment hands both to the gateway container as environment variables, and OpenClaw's vLLM provider takes its key from `VLLM_API_KEY`.
+
+The ConfigMap `openclaw-config` carries `openclaw.json`.
+It sets the gateway port 18789 and token authentication, points the `vllm` provider at your endpoint and model ID, and denies the `group:web` and `browser` tools.
+xref:reference/configuration.adoc[Configuration reference] goes through it key by key.
+
+If I had to pick one thing to remember from this page, it would be this: the gateway never reads the ConfigMap.
+Only the init container mounts it, at `/config`.
+Think of the ConfigMap as factory settings.
+They're applied once, when the box is opened, and after that the device keeps its own settings.
+
+The init container `init-config` runs the same pinned OpenClaw image as the gateway.
+On the first start, it copies `openclaw.json` to `~/.openclaw/openclaw.json` on the PVC, and on every later start it finds that copy and keeps it.
+From then on, OpenClaw owns the copy on the PVC and keeps its runtime changes there.
+It even refuses to start when that copy was replaced behind its back.
+
+[WARNING]
+====
+Editing the ConfigMap doesn't change a running deployment.
+The ConfigMap only reaches a new, empty PVC.
+To change the configuration of a running gateway, you patch it through the OpenClaw CLI in the gateway container, as xref:admin/change-config.adoc[Change the configuration of a running gateway] shows.
+====
+
+The init container has a second job.
+Earlier versions of the recipe mounted the PVC at `~/.openclaw`, so their state sits at the root of the volume.
+When `init-config` finds an `openclaw.json` there and no `.openclaw` directory, it moves everything except `lost+found` into `~/.openclaw`.
+That happens once, on the first start after an upgrade from the old layout.
+It also creates `~/.openclaw/workspace` when it's missing.
+
+== State lives on the PVC
+
+The PVC `openclaw-state` requests 5Gi of ReadWriteOnce storage from the storage class `gp3-csi`.
+OpenClaw keeps its state in SQLite, which needs POSIX file locking, so pick a block storage class and stay away from NFS.
+If your cluster's block storage class has another name, an overlay can change it without touching the base manifests.
+
+Everything OpenClaw keeps lives under `~/.openclaw` on that volume: `openclaw.json`, the `workspace` directory, and the state database.
+OpenClaw's own documentation is blunt about it.
+Lose the state directory, and you lose sessions, credentials, logs, and config.
+
+SQLite is also the reason the Deployment runs exactly one replica with the Recreate strategy.
+According to the recipe's docs, SQLite doesn't support concurrent writers.
+
+=== Why the PVC sits at `/home/node`
+
+You might expect the volume at `~/.openclaw`, right where the state goes.
+That's where earlier versions of the recipe put it, and with OpenClaw {openclaw-version} that layout fails with `EPERM: operation not permitted, fchmod`.
+OpenClaw tightens the permissions of its state directory when it starts, migrates state, or writes its configuration.
+A volume's mount point belongs to root, though, and the arbitrary user ID that OpenShift assigns can't change its permissions.
+It's a bit like being allowed to rearrange the furniture in a room but not to change the lock on its door.
+
+So the recipe mounts the PVC one level up, at `/home/node`, which is the gateway's `HOME`.
+Now `~/.openclaw` is an ordinary directory on the volume that the init container creates, and OpenClaw owns it.
+OpenClaw also needs a writable `~/.cache`, and that sits on the volume now, too.
+
+== Inside the Pod
+
+The Pod runs as a non-root user, and both containers drop all Linux capabilities and disallow privilege escalation.
+The gateway container runs `node /app/dist/index.js gateway run` and listens on port 18789.
+Its `HOME` is `/home/node`, and `OPENCLAW_CONFIG_DIR` points to `/home/node/.openclaw`.
+It requests 512Mi of memory and 250m CPU, with limits of 2Gi and one CPU.
+A comment in the manifest notes that the gateway idles at about 750Mi and that CLI commands you run with `oc exec` share the same limit.
+
+=== Why the gateway starts through `args`
+
+The recipe puts the gateway command into `args`, not `command`.
+That keeps the image's entrypoint in place: `tini` running `/app/docker-entrypoint.mjs`.
+And that entrypoint does real work.
+When it sees a foreground `gateway run`, it first runs `openclaw doctor --fix --non-interactive` and only then starts the gateway.
+If doctor fails, the container exits with doctor's exit code instead of starting the gateway.
+
+Doctor matters most after an image upgrade.
+On the first start with a new image, `openclaw doctor --fix` migrates the state to the new OpenClaw version and saves a backup of the state database first.
+OpenClaw's Docker documentation spells out the flip side: a custom entrypoint bypasses this step.
+Adapting the Deployment?
+Keep the gateway command in `args`.
+xref:admin/maintain.adoc[Back up, upgrade, and remove] covers the backup to take before an upgrade.
+
+The startup probe leaves room for that doctor pass.
+It checks `/startupz` every 10 seconds and allows 30 failures, a budget of 5 minutes.
+Readiness checks `/startupz` as well, and liveness checks `/healthz` every 30 seconds.
+None of them probes `/`, because the Control UI answers unknown paths with 200.
+
+== Optional: traces to MLflow
+
+OpenClaw emits OpenTelemetry traces on its own, through its `diagnostics-otel` plugin.
+The `mlflow-tracing` overlay collects them and sends them to the shared MLflow instance of Red Hat OpenShift AI (RHOAI).
+It builds on the base manifests and adds the dashed parts of the diagram:
+
+* A new `openclaw.json` in the ConfigMap that enables the `diagnostics-otel` plugin and points it at `http://localhost:4318`.
+* An `otel-collector` sidecar in the Pod.
+The gateway sends spans to it over OTLP with `http/protobuf`, on localhost port 4318.
+* The ServiceAccount `openclaw-tracing`, which the Pod runs as.
+* The RoleBinding `openclaw-tracing-mlflow`, which binds an `mlflow-integration` ClusterRole to that ServiceAccount.
+
+The collector exports the traces to RHOAI MLflow in the namespace `redhat-ods-applications`, on port 8443.
+It authenticates with the ServiceAccount's token as a bearer token.
+For TLS, it trusts the service CA certificate that OpenShift mounts into every Pod.
+With the overlay applied, the Pod reports two containers, `2/2 Running`.
+
+The seed-once rule bites here, too.
+If OpenClaw already runs in the namespace, the init container keeps the existing `openclaw.json`, so the overlay's configuration doesn't take effect by itself.
+xref:admin/tracing.adoc[Send traces to MLflow] walks you through the overlay, including that case.
+
+== Where to go next
+
+* Ready to set it up?
+xref:admin/deploy.adoc[Deploy OpenClaw] takes you through `oc apply -k manifests/` step by step.
+* Want every field of every manifest?
+xref:reference/manifests.adoc[Manifest reference] lists them per file.
+* Still weighing the raw manifests against claw-installer or an OpenShell sandbox?
+xref:overview/choose-a-path.adoc[Choose how to run OpenClaw] compares them.

@@ -23,3 +23,9 @@ rules:
       - '\{openclaw-version\}'
     forbid:
       - 'guide-no-sources'
+  - glob: "content/modules/ROOT/pages/overview/architecture.adoc"
+    require:
+      - 'image::deployment-architecture\.svg\['
+      - '/home/node'
+      - 'doctor --fix'
+      - 'xref:admin/deploy\.adoc'
