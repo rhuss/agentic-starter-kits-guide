@@ -4,8 +4,11 @@
 // starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:4,12-57
 // starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/configmap-patch.yaml:1-2,10-19,36,50-66
 // starter-kits:agents/openclaw/deployment/overlays/example/configmap-patch.yaml:19,29,34-35
+// starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:199
+// starter-kits:agents/openclaw/deployment/docs/troubleshooting.md:105
 // openclaw:docs/gateway/configuration/hot-reload.md:60-76,79-92,117-144,164-167,190-198
 // openclaw:docs/gateway/config-gateway.md:131-132,142,145-148,182,215-216
+// openclaw:docs/gateway/index.md:104-109
 // openclaw:docs/providers/vllm.md:11-17,91-115
 // openclaw:docs/gateway/opentelemetry/setup.md:17-40,44-56,164-173
 
@@ -173,7 +176,7 @@ xref:admin/tracing.adoc[Send traces to MLflow] applies this file, and xref:refer
 | Hot reload (exporter only)
 |===
 
-With the `diagnostics-otel` plugin loaded, a change under `diagnostics.otel` restarts only the exporter service: the previous exporter flushes its buffered spans before the replacement starts with the new settings, and the gateway process keeps running.
+With the `diagnostics-otel` plugin loaded, a change under `diagnostics.otel` restarts only the exporter service: the previous exporter flushes the old generation before the replacement starts with the new settings, and the gateway process keeps running.
 
 == Key the guide adds for the Route
 
@@ -202,6 +205,6 @@ The guide warns against one key that looks like a fix for the Route's HTTP 403 b
 | Key | Meaning | Reload
 
 | `gateway.trustedProxies`
-| Reverse-proxy addresses whose forwarded-client headers the gateway trusts. Adding the cluster network here makes the gateway accept the router's forwarded headers, but the kubelet's probes come from the same node addresses without those headers, so the gateway answers `/startupz` with 403 and the Pod stops being ready. Use the Route annotation `haproxy.router.openshift.io/set-forwarded-headers: never` instead, as xref:admin/access.adoc[Open the Control UI] shows.
+| Reverse-proxy addresses whose forwarded-client headers the gateway trusts. Adding the cluster network here makes the gateway accept the router's forwarded headers, but on OVN-Kubernetes the kubelet's health probes come from the same node addresses as the router, so the gateway rejects the probes with 403 and the Pod stops being ready. Use the Route annotation `haproxy.router.openshift.io/set-forwarded-headers: never` instead, as xref:admin/access.adoc[Open the Control UI] shows.
 | Hot reload
 |===
