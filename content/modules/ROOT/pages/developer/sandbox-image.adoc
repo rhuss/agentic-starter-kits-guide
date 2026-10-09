@@ -3,11 +3,11 @@
 // Sources:
 // starter-kits:sandboxes/base/Containerfile:12,15-16,19-33,44-46,49-56,59-60,66-73
 // starter-kits:sandboxes/base/entrypoint.sh:4,20-33
-// starter-kits:sandboxes/base/policy.yaml:1-17
+// starter-kits:sandboxes/base/policy.yaml:1-24
 // starter-kits:sandboxes/base/README.md:3,7-12,16,42-47
 // starter-kits:agents/openclaw/deployment/Containerfile.openshell:9,11,13-18,26-33,35-43
 // openshell:docs/how-it-works/policies/schema.mdx:11-13,28
-// openshell:docs/how-it-works/policies/manage-policies.mdx:42-52
+// openshell:docs/how-it-works/policies/manage-policies.mdx:42-52,355-361
 // openclaw:docs/install/node-compatibility.md:21,42
 
 The sandbox image is built in two layers.
@@ -21,7 +21,7 @@ To build and publish the image, see xref:developer/build-image.adoc[Build and pu
 == The shared base
 
 The base starts from UBI 10 minimal (`registry.access.redhat.com/ubi10/ubi-minimal:10.1`) and installs the system tools a sandbox needs, with no language runtime.
-The package set is `ca-certificates`, `curl`, `git`, `jq`, `iproute`, `nftables`, `bind-utils`, `procps-ng`, `vim-minimal`, `tar`, `gzip`, and `shadow-utils`, installed with `microdnf` and `--setopt=install_weak_deps=0` to keep the image small.
+The package set is `ca-certificates`, `curl`, `git`, `jq`, `iproute`, `nftables`, `bind-utils`, `procps-ng`, `vim-minimal`, `tar`, `gzip`, and `shadow-utils`, installed with `microdnf` and `--setopt=install_weak_deps=0`, which skips weak (recommended) dependencies.
 `ripgrep` is not in the UBI repositories, so the base downloads the release binary from GitHub instead.
 
 The base creates two users.
