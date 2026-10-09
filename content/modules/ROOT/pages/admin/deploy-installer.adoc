@@ -1,5 +1,182 @@
 = Deploy with claw-installer
-:guide-no-sources:
 
-// STUB
-This page is not written yet.
+// Sources:
+// claw-installer:README.md:5-14
+// claw-installer:README.md:94-100
+// claw-installer:README.md:108-119
+// claw-installer:run.sh:29-37
+// claw-installer:run.sh:181-234
+// claw-installer:run.sh:304-342
+// claw-installer:package.json:32-34
+// claw-installer:provider-plugins/openshift/docs/deploy-openshift.md:17-19
+// claw-installer:provider-plugins/openshift/docs/deploy-openshift.md:22-31
+// claw-installer:provider-plugins/openshift/docs/deploy-openshift.md:37-63
+// claw-installer:provider-plugins/openshift/docs/deploy-openshift.md:71-85
+// claw-installer:provider-plugins/openshift/docs/deploy-openshift.md:113-122
+// claw-installer:provider-plugins/openshift/src/openshift-deployer.ts:242-256
+// claw-installer:provider-plugins/openshift/src/openshift-deployer.ts:289-325
+// claw-installer:provider-plugins/openshift/src/openshift-deployer.ts:346-408
+// claw-installer:provider-plugins/openshift/src/route.ts:24-40
+// claw-installer:provider-plugins/openshift/templates/oauth-proxy-container.yaml:1-23
+// claw-installer:provider-plugins/openshift/templates/oauth-proxy-container.yaml:43-49
+// claw-installer:src/server/deployers/k8s-manifests.ts:38-41
+// claw-installer:src/server/deployers/k8s-manifests.ts:294-308
+// claw-installer:src/server/deployers/k8s-manifests.ts:322-334
+// claw-installer:src/server/deployers/k8s-manifests.ts:619-632
+// claw-installer:src/server/deployers/k8s-manifests.ts:833
+// claw-installer:src/server/deployers/k8s-manifests.ts:858-902
+// claw-installer:src/server/deployers/k8s-helpers.ts:36-39
+// claw-installer:src/server/deployers/k8s-helpers.ts:935-938
+// claw-installer:src/server/deployers/kubernetes.ts:153
+// claw-installer:src/server/deployers/kubernetes.ts:410-415
+// claw-installer:src/server/deployers/kubernetes.ts:510-515
+// openclaw:docker-entrypoint.mjs:72-116
+// openclaw:docs/install/docker.md:247-249
+
+This page is an optional branch of the Administrator guide.
+Follow it only if your team prefers claw-installer, a browser-based installer that deploys OpenClaw and manages the OpenShift extras (an OAuth proxy sidecar, a Route, and a ServiceAccount) for you.
+For the recommended path, use the raw manifests in xref:admin/deploy.adoc[Deploy OpenClaw], which pin the image to a digest and keep the configuration under your control.
+xref:overview/choose-a-path.adoc[Choose how to run OpenClaw] compares the two.
+
+This page is written from the installer source code at commit {claw-installer-commit-short}, not from its documentation.
+The installer's own OpenShift guide is stale in several places, so where a step here differs from that guide, this page follows the code.
+The CAUTION at the end lists the ways the installer's deployment differs from the raw manifests, because those differences change how you secure and upgrade the gateway.
+
+== Prerequisites
+
+Have the following in place before you start:
+
+* The `oc` CLI, authenticated to your cluster with `oc login`.
+The OpenShift provider plugin is detected only when you are logged in to an OpenShift cluster.
+* Permission to self-provision projects, or an existing project where you have edit access.
+If the target project does not exist, the installer creates it through the OpenShift `ProjectRequest` API.
+With namespace-scoped access only, enter your existing project name in the deploy form.
+* `podman` and Node.js on the machine that runs the installer.
+On macOS the launcher runs the app natively with Node.js, and on Linux it runs the app as a container against the rootless podman socket.
+* A credential for at least one model provider, such as the endpoint URL for a self-hosted vLLM server.
+* A block storage class (for example `gp3-csi`, `managed-csi`, or `thin-csi`), not NFS, because OpenClaw's SQLite state needs POSIX file locking.
+
+== Start the installer
+
+The installer is a local web application that you drive from your browser.
+It talks to your cluster through the kubeconfig that `oc login` wrote, so log in first and keep that session active.
+
+. Log in to your cluster so the OpenShift plugin activates.
++
+[source,bash]
+----
+oc login <cluster-api-url>
+----
++
+The OpenShift plugin ships in the repository under `provider-plugins/openshift/` and loads automatically at startup.
+No separate installation step is needed.
+
+. Clone the repository and run the launcher.
++
+The launcher pulls the installer image `quay.io/sallyom/openclaw-installer:latest`, listens on port 3000, and keeps its state under `~/.openclaw`.
+On macOS with podman it extracts the built app from that image and runs it with your local Node.js, because podman socket forwarding is unreliable across the macOS virtual machine backends.
+On Linux with podman it runs the container against the rootless podman socket and mounts `~/.kube` read-only so cluster detection uses the same kubeconfig as a native run.
++
+[source,bash]
+----
+git clone https://github.com/sallyom/openclaw-installer.git
+cd openclaw-installer
+./run.sh
+----
++
+NOTE: The installer's README clones `sallyom/openclaw-installer`, while the recipe documentation links the same repository as `sallyom/claw-installer`.
+Both refer to the installer this page describes.
+
+. Open `http://localhost:3000` in your browser.
++
+When the cluster is OpenShift, the plugin auto-detects it and the deploy form offers the OpenShift target with OAuth proxy support.
+
+A development flow is available once dependencies are installed: `npm run build && npm run dev` starts a `tsx watch` server and a `vite` client.
+The README recommends `./run.sh` for everyday use.
+
+== Fill in the deploy form
+
+The OpenShift target adds OAuth proxy, Route, and ServiceAccount resources on top of the base Kubernetes deployment.
+A few form fields decide what the installer builds.
+
+Image:: The container image for the gateway.
+It defaults to `ghcr.io/openclaw/openclaw:latest`, an unpinned tag.
+
+Project / Namespace:: The OpenShift project to deploy into.
+The installer creates it if it does not exist, or reuses an existing project you name.
+
+Use image entrypoint:: Unchecked by default.
+When unchecked, the installer replaces the gateway container's startup command with its own command that binds the gateway to loopback.
+When checked, the installer keeps the image's own startup script and provides the Route URL to the image as `OPENCLAW_PUBLIC_URL`.
+Check this box only for images whose entrypoint must configure and start the gateway themselves, such as a policy image.
+This choice also decides whether the image's `doctor --fix` activation runs on each start, which the CAUTION below explains.
+
+Sandbox backend:: Optional.
+Choose OpenShell (which needs a provisioned OpenShell gateway, see xref:admin/install-openshell.adoc[Install OpenShell for sandboxes]) or SSH (which needs a remote sandbox host).
+
+Fill in the fields, then click Deploy.
+The deploy log streams into the browser and prints the Route URL when it finishes.
+
+== What the installer creates
+
+On the OpenShift target the installer applies the base Kubernetes resources and then patches them for OAuth.
+It creates the following in your project.
+
+* ServiceAccount `openclaw-oauth-proxy`, used by the oauth-proxy sidecar as its OAuth client.
+* Secret `openclaw-oauth-config` (the OAuth client secret and cookie secret), Secret `openclaw-secrets` (the gateway token and provider API keys), and Secret `openclaw-proxy-tls` (the serving certificate, generated by the service CA).
+* ConfigMap `openclaw-config` (which holds `openclaw.json`) and ConfigMap `openclaw-agent` (the agent workspace files).
+* PersistentVolumeClaim `openclaw-home-pvc`, `ReadWriteOnce`, 10Gi, with no storage class set, so it binds against the cluster default.
+It is mounted at `/home/node`, with state under `/home/node/.openclaw`.
+* Service `openclaw`, exposing the gateway port 18789 and the oauth-proxy port 8443 (named `oauth-ui`).
+* Route `openclaw`, edge TLS with insecure traffic redirected, an HAProxy timeout of 30 minutes, and a target port of `oauth-ui` so the browser reaches the OAuth proxy first.
+* Deployment `openclaw`, with an init container, the gateway container, and the oauth-proxy sidecar.
+
+The oauth-proxy sidecar runs `quay.io/openshift/origin-oauth-proxy:4.14` on port 8443 and forwards authenticated traffic to the gateway at `http://localhost:18789`.
+It uses the OpenShift provider with `--scope=user:info`, so any authenticated cluster user may sign in, and `--skip-auth-regex=^/(metrics|api)` to leave the metrics and API paths unauthenticated.
+To front the gateway, the installer also sets `gateway.bind` to `loopback` and `gateway.controlUi.allowedOrigins` to the Route URL in `openclaw.json`.
+
+== Open the Control UI and pair your browser
+
+Browser traffic flows from the Route to the oauth-proxy, through OpenShift SSO, and on to the gateway on loopback.
+OpenShift authentication sits in front of the gateway, but the Control UI still requires device pairing after sign-in.
+
+. Confirm the Deployment is running before you connect.
++
+Check: the gateway and the oauth-proxy are both ready, so the Pod reports `2/2`.
++
+[source,bash]
+----
+oc -n <namespace> get pods -l app=openclaw
+----
+// expect: contains "2/2" and contains "Running"
+
+. Open the Route.
++
+Use the Open action on the Instances tab, which opens the Route with the saved gateway token filled in.
+The token is also written to `~/.openclaw/installer/k8s/<namespace>/gateway-token` with mode 600.
+
+. Approve the browser on first connect.
++
+After OpenShift SSO, OpenClaw records a pending pairing request.
+Approve it with Approve Pairing on the Instances tab.
+
+From the Instances tab, an OpenShift deployment supports Re-deploy (syncs your local agent files into the ConfigMap and restarts the Pod), Stop (scales the Deployment to 0), Start (scales it back to 1), Approve Pairing, and Delete (tears down the deployment and the project).
+
+[CAUTION]
+====
+The installer's deployment differs from the raw manifests in xref:admin/deploy.adoc[Deploy OpenClaw] in ways that affect security and upgrades.
+
+* It uses unpinned `:latest` images.
+The gateway defaults to `ghcr.io/openclaw/openclaw:latest` and the init container runs `registry.access.redhat.com/ubi9-minimal:latest`, where the raw manifests pin the gateway to a digest.
+A `:latest` tag can change between rollouts without warning.
+* The init container copies `/config/openclaw.json` from the ConfigMap into the state directory on every start and resets its ownership and mode.
+The raw manifests seed that file only once.
+Any change you make with `config patch` is overwritten on the next restart unless you also update the ConfigMap `openclaw-config`.
+* Unless you check "Use image entrypoint", the installer replaces the gateway command with `sh -c "umask 007 && exec node dist/index.js gateway run --bind loopback --port 18789"`.
+A replaced command bypasses the image entrypoint's `doctor --fix` activation step, which repairs state and runs migrations before the gateway starts.
+Check "Use image entrypoint" to keep the image's own startup script and that activation step.
+* The gateway token is written in plaintext into ConfigMap `openclaw-config` (inside `openclaw.json`), in addition to Secret `openclaw-secrets`.
+A ConfigMap does not have the access controls of a Secret.
+* The gateway liveness and readiness probes make an HTTP request to `/` and treat any status below 400 as healthy.
+Because the Control UI answers unknown paths with a success status, these probes can report healthy even when the gateway is not serving requests correctly.
+====
