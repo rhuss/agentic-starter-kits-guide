@@ -31,7 +31,7 @@ Check: the agent's reply appears in the conversation, with a *Worked for* summar
 Each conversation is a session of its own.
 When you want a clean start rather than continuing the current thread, open a new session.
 
-. Choose *New Session* in the sidebar.
+. Choose *New Session*.
 +
 Check: an empty conversation opens, ready for your first message.
 
@@ -65,8 +65,6 @@ A model that does not support it can fail in ways you can see right in the chat,
 
 One sign is raw JSON in the reply.
 Instead of acting on your request, the agent answers with raw JSON, which is the machine form of a tool call it never ran.
-
-Another sign is a turn that runs without ever giving you a real answer.
 
 The most dangerous sign is a model that invents results and presents them as real.
 
