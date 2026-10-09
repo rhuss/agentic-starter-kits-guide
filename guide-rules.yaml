@@ -199,3 +199,8 @@ rules:
       - 'allowedOrigins'
       - 'diagnostics\.otel'
       - 'plugins\.allow'
+  - glob: "content/modules/ROOT/pages/reference/model-compatibility.adoc"
+    require:
+      - '--tool-call-parser'
+      - 'gpt-oss-20b'
+      - '(?i)tested'

@@ -1,5 +1,187 @@
 = Model compatibility
-:guide-no-sources:
 
-// STUB
-This page is not written yet.
+// Sources:
+// starter-kits:agents/openclaw/deployment/docs/model-compatibility.md:3-22,24-36,46-60
+// starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:3-5,13-15
+// starter-kits:agents/openclaw/deployment/docs/mlflow-tracing.md:3-5
+
+OpenClaw drives its agents through structured tool calling, so the model behind the gateway has to support it.
+This page lists the models the recipe tested, what the gateway needs from a model, how the model-reference prefix routes to a provider, the API types a provider accepts, and the environments the recipe and this guide tested.
+
+For the keys that select the model and provider in `openclaw.json`, see xref:reference/configuration.adoc[Configuration reference].
+For the vLLM flags as a deployment prerequisite, see xref:admin/prerequisites.adoc[Check the prerequisites].
+
+== The recipe's tested models
+
+The recipe's model-compatibility document reports these results, dated 2026-04-13.
+
+[cols="2,2,1,3",options="header"]
+|===
+| Model | Provider | Tool calling | Notes
+
+| gpt-oss-20b
+| vLLM (cluster)
+| Working
+| Requires `--tool-call-parser openai --enable-auto-tool-choice`
+
+| qwen2.5:7b
+| Ollama (local)
+| Working
+| Best local option for 32 GB machines (about 8 GB RAM)
+
+| qwen3.5:27b
+| Ollama (local)
+| Working
+| Tools work, but about 41 GB RAM makes it impractical locally
+
+| llama3.2:3b
+| Ollama (local)
+| Partial
+| Executes tools but gets confused by OpenClaw's internal system prompts
+
+| phi4-mini:3.8b
+| Ollama (local)
+| Broken
+| Emits raw JSON in the response body instead of native tool calls
+
+| codex/gpt-5.4
+| Codex Harness
+| Expected
+| Routes through the Codex app-server; requires a sidecar deployment
+|===
+
+The `Expected` entry marks a model the document predicts but does not report as run.
+
+[NOTE]
+====
+The table is dated 2026-04-13 and predates the models in the tested environments below.
+It defines no thresholds for `Working`, `Partial`, or `Broken`.
+====
+
+== What the gateway needs from a model
+
+The gateway needs a model that makes structured tool calls through the native tool API.
+Not every model does, and the recipe names two failure modes.
+
+Some models emit raw JSON in the response body instead of calling the tool.
+Some fabricate tool results when a call fails silently.
+
+[WARNING]
+====
+A silent tool-call failure is the most dangerous mode for an agent.
+When phi4-mini's tool calls failed silently, the model fabricated an entire file listing: realistic paths that did not exist, presented confidently as real data.
+The reader cannot tell the results are fake without checking every output.
+====
+
+== Tool-call parser per model family
+
+A vLLM server that OpenClaw calls directly runs with `--enable-auto-tool-choice` and a `--tool-call-parser` whose value matches the model family.
+
+[cols="1,2,3",options="header"]
+|===
+| Model family | vLLM flags | Source
+
+| gpt-oss
+| `--enable-auto-tool-choice --tool-call-parser openai`
+| The recipe's table, which requires both flags for gpt-oss-20b
+
+| Qwen2.5
+| `--enable-auto-tool-choice --tool-call-parser hermes`
+| This guide's tested Qwen2.5-0.5B-Instruct deployment on vLLM (Red Hat AI Inference Server 3.3, CPU)
+|===
+
+[WARNING]
+====
+The recipe's prerequisite list gives `--tool-call-parser openai` for every vLLM server OpenClaw calls directly, but that parser is the one for gpt-oss models.
+For another family, do not copy the flag: the tested Qwen2.5 deployment used `hermes`, and the recipe names no parser for other families.
+====
+
+== Provider prefixes
+
+OpenClaw can reach several providers at once.
+The prefix on the model reference decides which route and harness handle the call.
+
+[cols="1,2,2",options="header"]
+|===
+| Prefix | Route | Harness
+
+| `openai-compat/`
+| Self-hosted vLLM endpoint
+| OpenClaw PI runtime
+
+| `openai/`
+| Direct OpenAI API
+| OpenClaw PI runtime
+
+| `codex/`
+| Codex app-server (sidecar)
+| Codex harness
+
+| `anthropic/`
+| Anthropic API
+| OpenClaw PI runtime
+
+| `ollama/`
+| Local Ollama instance
+| OpenClaw PI runtime
+|===
+
+A mixed deployment can set `runtime: "auto"` to let OpenClaw pick the harness from the prefix.
+
+[NOTE]
+====
+The recipe's own ConfigMap does not use these prefixes.
+It declares a provider named `vllm` with the API type `openai-completions` and references the model as `vllm/<model-id>`, as xref:reference/configuration.adoc[Configuration reference] shows.
+====
+
+== API types
+
+The provider's API type goes in `models.providers.*.api` in the ConfigMap.
+The recipe lists these valid values.
+
+[cols="2,3",options="header"]
+|===
+| API type | Use case
+
+| `openai-completions`
+| vLLM, LM Studio, any OpenAI-compatible endpoint
+
+| `openai-responses`
+| Direct OpenAI API
+
+| `openai-codex-responses`
+| Codex app-server
+
+| `anthropic-messages`
+| Anthropic API or Anthropic on Vertex AI
+
+| `google-generative-ai`
+| Google Gemini (AI Studio or Vertex AI)
+
+| `ollama`
+| Local Ollama instance
+
+| `azure-openai-responses`
+| Azure OpenAI
+
+| `bedrock-converse-stream`
+| AWS Bedrock
+
+| `github-copilot`
+| GitHub Copilot
+|===
+
+== Tested environments
+
+Two tested environments back this recipe, and this guide ran a third against a different model.
+
+The recipe's raw-manifest deployment was last tested on 2026-10-08 on OpenShift 4.22 with OpenClaw {openclaw-version}, against vLLM (Red Hat AI Inference Server 3.3, CPU) serving Qwen2.5-0.5B-Instruct, as a fresh install and as an upgrade from 2026.6.5.
+An earlier run on 2026-06-10 used OpenShift 4.19 (ROSA) with OpenClaw 2026.6.5 and vLLM through OGX 1.0.2.
+
+The recipe's MLflow tracing path was last tested on 2026-10-08 on OpenShift 4.22 with OpenClaw {openclaw-version}, the same vLLM (Red Hat AI Inference Server 3.3, CPU) serving Qwen2.5-0.5B-Instruct, and RHOAI 3.3.1 MLflow.
+An earlier run on 2026-06-17 used OpenClaw 2026.6.5 with vLLM gpt-oss-120b and RHOAI MLflow 3.x.
+
+This guide ran its own live test on {baseline-date} against gpt-oss-20b, so that the pages showing model output describe a model that finishes OpenClaw turns without test-only settings.
+It served gpt-oss-20b (thinking off) with vLLM on a ROSA HCP cluster, on one `g5.xlarge` node with a single NVIDIA A10G 24 GB GPU, using the Red Hat AI Inference Server CUDA image `registry.redhat.io/rhaiis/vllm-cuda-rhel9:3.3.0`.
+vLLM ran with `--max-model-len 32768 --enable-auto-tool-choice --tool-call-parser openai`, reached through an edge Route with an API key.
+xref:user/first-chat.adoc[Hold your first conversation] shows what this model does in a session.
