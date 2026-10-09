@@ -115,13 +115,13 @@ Take the backup above before you delete, and if you want the volume to survive d
 
 . Delete the objects created from the base manifests.
 +
-Check: the `openclaw` Deployment no longer exists in the project.
+Check: each object from the base manifests is reported as deleted.
 +
 [source,bash]
 ----
 oc delete -k manifests/ -n my-openclaw
 ----
-// expect: not-contains "openclaw"
+// expect: contains "deleted"
 
 If you deployed with an overlay, delete the overlay instead, for example `oc delete -k overlays/my-env`.
 The overlay sets the namespace rather than creating it, so the project `my-openclaw` stays after the delete.
