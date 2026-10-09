@@ -7,6 +7,7 @@
 // starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:4,8-11,18-20,25,34-45
 // starter-kits:agents/openclaw/deployment/manifests/03-pvc.yaml:4,10-12
 // starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:42-50,80-96
+// starter-kits:agents/openclaw/deployment/manifests/kustomization.yaml:12-14
 // starter-kits:agents/openclaw/deployment/overlays/example/kustomization.yaml:5-24
 // starter-kits:agents/openclaw/deployment/overlays/example/configmap-patch.yaml:1-52
 // starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/configmap-patch.yaml:36
@@ -16,7 +17,9 @@
 // openclaw:docs/concepts/models.md:400
 // openclaw:docs/gateway/index.md:76
 // openclaw:docs/gateway/security/network-exposure.md:106
-// openclaw:src/gateway/known-weak-gateway-secrets.ts:7-10,17-19,49-56
+// openclaw:src/gateway/known-weak-gateway-secrets.ts:7-10,17-19,31-56
+// openclaw:src/config/redact-sentinel.ts:4-19
+// openclaw:docs/gateway/config-secrets-env.md:38-52
 
 Before the first `oc apply`, three objects in the recipe need values from you.
 The ConfigMap `openclaw-config` names the model endpoint and the model, the Secret `openclaw-secrets` holds the gateway token and the endpoint's API key, and the PersistentVolumeClaim (PVC) `openclaw-state` names the storage class.
@@ -107,8 +110,9 @@ The Deployment passes both entries of the Secret `openclaw-secrets` to the gatew
 The `openclaw.json` in the ConfigMap has an API key field of its own, `models.providers.vllm.apiKey`, which the recipe sets to `not-needed`.
 
 When both are present, the environment variable wins.
-OpenClaw looks up the provider's environment variable before it falls back to the `apiKey` from the configuration, and sends the value it finds as the bearer token.
-That holds even when `apiKey` contains a literal key: OpenClaw uses the configured value only when `VLLM_API_KEY` isn't set.
+OpenClaw looks up the provider's environment variable before it falls back to the `apiKey` from the configuration, and sends the value it finds to the model endpoint.
+That holds even when `apiKey` contains a literal key.
+In the recipe's configuration, OpenClaw uses the configured value only when `VLLM_API_KEY` isn't set.
 Because the Deployment always sets the variable from the Secret, the Secret decides which key reaches your model endpoint.
 Put the key into the Secret.
 Editing `apiKey` in the ConfigMap doesn't change what the gateway sends.
@@ -116,7 +120,7 @@ Editing `apiKey` in the ConfigMap doesn't change what the gateway sends.
 [NOTE]
 ====
 The tracing overlay's `openclaw.json` sets `apiKey` to `+${VLLM_API_KEY}+`, as OpenClaw's vLLM documentation does.
-That's a reference to the same environment variable, so the Secret's value is what gets sent there, too.
+OpenClaw replaces a `+${VAR_NAME}+` reference in a configuration string with the value of that environment variable, so the Secret's value is what gets sent there, too.
 ====
 
 The gateway token comes from the environment in the same way.
@@ -229,7 +233,8 @@ The API key depends on your endpoint, but the token has to change in every case.
 [CAUTION]
 ====
 The gateway doesn't reject `CHANGE-ME`.
-At startup it refuses only a blank token, the strings `undefined` and `null`, and two placeholders from OpenClaw's own examples.
+At startup it refuses a blank token, the strings `undefined` and `null`, two placeholders from OpenClaw's own examples, and redaction markers such as `REDACTED`.
+`CHANGE-ME` is on none of these lists.
 If you forget to replace the recipe's placeholder, `CHANGE-ME` becomes the gateway's token.
 ====
 
