@@ -178,3 +178,9 @@ rules:
       - '(?i)session'
       - '(?i)model'
       - 'gpt-oss-20b'
+  - glob: "content/modules/ROOT/pages/user/whats-enabled.adoc"
+    require:
+      - '(?i)web search|web_search'
+      - '(?i)browser'
+      - '(?i)channel'
+      - 'xref:admin/change-config\.adoc'

@@ -1,5 +1,55 @@
 = What this deployment can and cannot do
-:guide-no-sources:
 
-// STUB
-This page is not written yet.
+// Sources:
+// starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:22-28,51-57
+// starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/configmap-patch.yaml:21-26,68-73
+// openclaw:docs/gateway/sandbox-vs-tool-policy-vs-elevated.md:38,73,103-104
+// openclaw:docs/gateway/heartbeat.md:16-18,96-97,109-113,349
+
+OpenClaw can do a lot more than this deployment lets it.
+The recipe ships a focused configuration that turns several features off, so the agent stays inside the boundaries your team set for it.
+This page walks through what is switched off and what that means for you, and it points you to the one thing that can change any of it: your administrator.
+
+== No web search, web fetch, or browser tools
+
+The recipe tells the gateway to deny two sets of tools, written as `tools.deny: [group:web, browser]`.
+`group:web` is a shorthand that stands for the `web_search`, `x_search`, and `web_fetch` tools, so denying it takes all three away at once.
+Denying `browser` removes the tool that would let the agent drive a web browser on your behalf.
+
+In practice this means the agent cannot search the web, open a web page, or control a browser for you.
+A denied tool is a hard stop: even if the model tries to call one, the gateway refuses it, because a deny rule always wins.
+If you ask the agent to look something up online, expect it to work from what it already knows rather than from a live search.
+
+== No messaging channels
+
+The recipe sets `channels: {}`, which means no messaging channels are connected.
+Channels are the links that would let the agent talk to you through an outside platform such as a chat app.
+
+Because there are none, the only way you reach the agent is the Control UI in your browser, which you set up in xref:user/connect.adoc[Connect and pair your browser].
+There is no separate inbox, phone number, or chat handle to watch.
+
+== The agent runs without a separate sandbox
+
+The recipe sets the agent's sandbox mode to off (`sandbox: {mode: off}`).
+With sandboxing off, the agent's tools run directly inside the gateway rather than in a separate, isolated OpenShell sandbox.
+
+For you, this changes nothing you can see in the chat: you send a message and read the reply the same way either way.
+Running the agent inside its own sandbox is a separate capability that an administrator sets up when a deployment needs it.
+
+== No proactive heartbeat messages
+
+Heartbeat is a background feature that would wake the agent on a timer (every 30 minutes by default) to check whether anything needs your attention, then send you a short note if it does.
+Those notes are delivered to an owner address, which OpenClaw finds from the configured messaging channels.
+
+Since this deployment configures no channels and no owner address, heartbeat has nowhere to send a message, so each scheduled check is skipped before the agent even runs.
+On top of that, the default heartbeat instruction tells the agent to stay quiet and reply with nothing when there is nothing to report.
+The practical result is that the agent does not message you on its own: it answers when you talk to it, and otherwise stays silent.
+
+== What an administrator can change for you
+
+Every setting on this page lives in the gateway's configuration, and an administrator can change it on a running deployment.
+If you need a feature that is currently off, that is who to ask.
+
+For example, an administrator can allow a web tool you need, connect a messaging channel, turn on sandboxing, or set up heartbeat delivery.
+The steps for changing a running gateway, and the restart that makes a change take effect, are in xref:admin/change-config.adoc[Change the configuration of a running gateway].
+When you ask, name the specific tool or feature you want, so the administrator knows exactly which setting to adjust.
