@@ -173,3 +173,8 @@ rules:
       - 'Gateway secret'
       - '(?i)pair'
       - '(?i)site data'
+  - glob: "content/modules/ROOT/pages/user/first-chat.adoc"
+    require:
+      - '(?i)session'
+      - '(?i)model'
+      - 'gpt-oss-20b'

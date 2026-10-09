@@ -1,5 +1,88 @@
 = Hold your first conversation
-:guide-no-sources:
 
-// STUB
-This page is not written yet.
+// Sources:
+// openclaw:docs/web/control-ui.md:11,23,25,29,31,49-52,60-71,91-95,190-199
+// starter-kits:agents/openclaw/deployment/docs/model-compatibility.md:5,11,15,18-23,40,44
+
+Your browser is connected and paired, so the chat is ready to use.
+This page sends your first message, reads the reply, and shows you how to start a new conversation and return to earlier ones.
+It also covers which model answers you and how to spot a model that cannot use its tools, so you know what to tell your administrator.
+If the chat has not opened yet, finish xref:user/connect.adoc[Connect and pair your browser] first.
+
+== Send your first message
+
+The Control UI is the web app that the gateway serves, and it talks to the gateway directly, so your messages go straight to the agent.
+Sending a message is the same as in any chat app: type it and send it.
+
+. Type a message in the chat box and send it.
++
+Check: your message appears in the conversation, and the agent starts a reply.
+
+. Watch the agent work, then read the answer.
++
+While the agent is working, a working indicator shows that the turn is running.
+When the turn finishes, its tool activity collapses under a *Worked for* heading above the answer.
+That heading also shows how many tool calls the agent made and how many of them failed, for example a count of 200 tool calls with 20 failed.
++
+Check: the agent's reply appears in the conversation, with a *Worked for* summary above it when the agent used any tools.
+
+== Start a new conversation
+
+Each conversation is a session of its own.
+When you want a clean start rather than continuing the current thread, open a new session.
+
+. Choose *New Session* in the sidebar.
++
+Check: an empty conversation opens, ready for your first message.
+
+== Return to an earlier conversation
+
+Your sessions stay in the sidebar, so you can pick up a conversation you started before.
+
+. Find the session in the sidebar list and select it.
++
+Check: the conversation loads its transcript where you left off.
+
+TIP: Name a session so it is easy to find again later.
+Select the session's title in the chat header, type a new name, and press Enter to save it.
+
+== See which model is answering
+
+The agent answers with whatever model your administrator configured, and the Control UI shows you which one.
+
+. Open *Agents* in the sidebar.
++
+Check: each agent card shows its model, along with its current status and recent activity.
+
+This guide is written around gpt-oss-20b, served through vLLM on a GPU.
+With that model, OpenClaw's tool calling works once your administrator turns it on for the endpoint, so the agent can use the tools this deployment allows.
+For the full list of tested models, see xref:reference/model-compatibility.adoc[Model compatibility].
+
+== When the model cannot use its tools
+
+OpenClaw needs a model that supports structured tool calling.
+A model that does not support it can fail in ways you can see right in the chat, so it helps to recognize them.
+
+One sign is raw JSON in the reply.
+Instead of acting on your request, the agent answers with raw JSON, which is the machine form of a tool call it never ran.
+
+Another sign is a turn that runs without ever giving you a real answer.
+
+The most dangerous sign is a model that invents results and presents them as real.
+
+[WARNING]
+====
+A model that cannot use its tools may still answer confidently with results it never produced, such as a file listing that looks real but is not.
+In testing, a model whose tool calls failed silently produced a realistic list of files that did not exist, presented as if it were real data.
+Treat any reply you cannot confirm as unverified until you check it yourself.
+====
+
+Before you rely on the agent for anything that matters, send a request whose answer you can check yourself, and confirm the result is real.
+If the replies look like raw JSON, or the agent describes results you cannot confirm, tell your administrator which model is answering (the name on the *Agents* card) and that its tool calls are not working.
+Your administrator checks the model choice and the model endpoint's tool-calling settings.
+The xref:reference/model-compatibility.adoc[Model compatibility] page lists which models are known to work.
+
+== Where to go next
+
+Now that you can hold a conversation, read xref:user/whats-enabled.adoc[What this deployment can and cannot do].
+It covers the tools and features this deployment turns on and off, and how to ask for more.
