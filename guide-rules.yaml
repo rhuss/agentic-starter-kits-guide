@@ -163,3 +163,8 @@ rules:
       - 'kustomization\.yaml'
       - 'agent\.yaml'
       - 'tools\.deny|tools\.profile|"deny"'
+  - glob: "content/modules/ROOT/pages/user/index.adoc"
+    require_order:
+      - 'xref:user/connect\.adoc'
+      - 'xref:user/first-chat\.adoc'
+      - 'xref:user/whats-enabled\.adoc'

@@ -1,5 +1,38 @@
 = User guide
-:guide-no-sources:
 
-// STUB
-This page is not written yet.
+// Sources:
+// openclaw:docs/web/control-ui.md:2-3,11,184
+// starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:177,179,192,201
+
+Welcome.
+This deployment runs an OpenClaw agent for you, and you talk to it from your browser.
+
+== What you can do here
+
+OpenClaw's Control UI is a web app that the gateway serves, so it opens right in your browser and there's nothing to install.
+From it you chat with the agent and follow the work it does.
+Your administrator sets up the deployment, and you connect to it as a user.
+
+== What to ask your administrator for
+
+Before you can connect, ask the person who set up the deployment for three things.
+
+The web address of the Control UI::
+This is the link you open in your browser to reach the agent.
+
+The gateway token::
+You paste this token when the Control UI asks you to connect, and it's what lets you in.
+
+Approval for your browser::
+When a browser that is not on the cluster connects, the gateway asks for that connection to be approved.
+Your administrator approves it, and then you reach the chat.
+
+Once you have the address, paste the token, and your browser is approved, the chat interface is ready to use.
+
+== Where to go next
+
+Work through these pages in order.
+
+. xref:user/connect.adoc[Connect and pair your browser] opens the address, pastes the token, and gets your browser approved.
+. xref:user/first-chat.adoc[Hold your first conversation] sends your first message and reads the reply.
+. xref:user/whats-enabled.adoc[What this deployment can and cannot do] covers the capabilities this deployment turns on.
