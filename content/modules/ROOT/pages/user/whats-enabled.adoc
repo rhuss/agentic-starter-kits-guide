@@ -3,7 +3,7 @@
 // Sources:
 // starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:22-28,51-57
 // starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/configmap-patch.yaml:21-26,68-73
-// openclaw:docs/gateway/sandbox-vs-tool-policy-vs-elevated.md:38,73,103-104
+// openclaw:docs/gateway/sandbox-vs-tool-policy-vs-elevated.md:36,73,103-104
 // openclaw:docs/gateway/heartbeat.md:16-18,96-97,109-113,349
 
 OpenClaw can do a lot more than this deployment lets it.
@@ -31,7 +31,7 @@ There is no separate inbox, phone number, or chat handle to watch.
 == The agent runs without a separate sandbox
 
 The recipe sets the agent's sandbox mode to off (`sandbox: {mode: off}`).
-With sandboxing off, the agent's tools run directly inside the gateway rather than in a separate, isolated OpenShell sandbox.
+With sandboxing off, the agent's tools run directly on the host where the gateway runs rather than in a separate, isolated sandbox.
 
 For you, this changes nothing you can see in the chat: you send a message and read the reply the same way either way.
 Running the agent inside its own sandbox is a separate capability that an administrator sets up when a deployment needs it.
@@ -39,7 +39,7 @@ Running the agent inside its own sandbox is a separate capability that an admini
 == No proactive heartbeat messages
 
 Heartbeat is a background feature that would wake the agent on a timer (every 30 minutes by default) to check whether anything needs your attention, then send you a short note if it does.
-Those notes are delivered to an owner address, which OpenClaw finds from the configured messaging channels.
+Those notes are delivered to an owner address, which OpenClaw finds from a configured owner entry or messaging channel.
 
 Since this deployment configures no channels and no owner address, heartbeat has nowhere to send a message, so each scheduled check is skipped before the agent even runs.
 On top of that, the default heartbeat instruction tells the agent to stay quiet and reply with nothing when there is nothing to report.
