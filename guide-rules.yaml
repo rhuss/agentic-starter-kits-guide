@@ -204,3 +204,11 @@ rules:
       - '--tool-call-parser'
       - 'gpt-oss-20b'
       - '(?i)tested'
+  - glob: "content/modules/ROOT/pages/reference/troubleshooting.adoc"
+    require:
+      - 'proxy_attribution_required'
+      - 'EPERM'
+      - 'config patch'
+      - 'devices clear --yes'
+    forbid:
+      - '/data/\.openclaw'

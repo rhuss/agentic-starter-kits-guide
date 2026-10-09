@@ -1,5 +1,331 @@
 = Troubleshooting
-:guide-no-sources:
 
-// STUB
-This page is not written yet.
+// Sources:
+// starter-kits:agents/openclaw/deployment/docs/troubleshooting.md:20-383
+// starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:182-241
+// starter-kits:agents/openclaw/deployment/docs/installer-deployment.md:178-315
+// openclaw:docs/gateway/heartbeat.md:25-27,37,96,101,167-168
+// openclaw:docs/gateway/doctor/config-migrations.md:399
+// openclaw:docs/cli/devices.md:40-53,140-150
+// openclaw:docs/gateway/troubleshooting/config-validation-and-probes.md:11-75,84-106
+
+This page lists the problems you are most likely to hit when you run OpenClaw on OpenShift, from most to least frequent.
+Each entry gives the symptom, the cause, the fix, and a check.
+Commands that call the OpenClaw CLI run inside the gateway container with `oc exec`.
+The examples use the namespace `my-openclaw`.
+
+Where a mechanism belongs to another page, this page links to it instead of repeating the steps:
+xref:admin/access.adoc[Open the Control UI] for Route headers and allowed origins,
+xref:admin/change-config.adoc[Change the configuration of a running gateway] for config patches,
+xref:admin/maintain.adoc[Back up, upgrade, and remove] for backup and the current manifest layout,
+and xref:user/connect.adoc[Connect and pair your browser] for device pairing.
+
+== Route returns 403 proxy_attribution_required
+
+Symptom::
+The Control UI does not load through the Route.
+The gateway answers with a JSON body of type `proxy_attribution_required`, and its log shows `observed unattributable proxy-shaped traffic from <address>`.
+
+Cause::
+The OpenShift router adds `X-Forwarded-For` headers by default.
+OpenClaw answers a request that carries forwarded headers from a proxy outside `gateway.trustedProxies` with HTTP 403.
+
+Fix::
+Apply the current manifests, or annotate the Route so the router stops adding the headers, then add the Route host to the allowed origins.
+
+[source,bash]
+----
+oc annotate route openclaw -n my-openclaw \
+  haproxy.router.openshift.io/set-forwarded-headers=never --overwrite
+----
+
+Adding the Route host to `gateway.controlUi.allowedOrigins` is covered in xref:admin/access.adoc[Open the Control UI].
+
+[WARNING]
+====
+Do not add the cluster network to `gateway.trustedProxies` instead.
+On OVN-Kubernetes the kubelet's health probes come from the same node addresses as the router, so the gateway would reject the probes as well and the pod would stop being ready.
+====
+
+Check:: Reload the Control UI through the Route.
+The gateway log no longer records unattributable proxy-shaped traffic, and the UI loads.
+
+== Route returns "Application is not available" (503)
+
+Symptom::
+The browser shows "Application is not available" and `curl` against the Route returns 503.
+This appears with the installer deployment, where the Route fronts an OAuth proxy sidecar.
+
+Cause::
+The OAuth proxy serves plain HTTP on its listen address.
+If the Route uses `tls.termination: reencrypt`, the router expects TLS on the backend and the connection fails silently.
+The installer's Route is TLS edge-terminated to the OAuth proxy.
+
+Fix::
+Recreate the Route with `edge` termination and a redirect policy.
+
+[source,bash]
+----
+oc delete route openclaw -n my-openclaw
+
+cat <<'EOF' | oc apply -f -
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: openclaw
+  namespace: my-openclaw
+spec:
+  to:
+    kind: Service
+    name: openclaw
+  port:
+    targetPort: oauth-ui
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+EOF
+----
+
+Check:: The Route reports `edge` termination, and `curl` now returns 403 (the OAuth proxy is running and redirects to OpenShift SSO).
+
+[source,bash]
+----
+oc get route openclaw -n my-openclaw -o jsonpath='{.spec.tls.termination}'
+----
+// expect: contains "edge"
+
+== Gateway uses wrong model or "No API key"
+
+Symptom::
+The agent cannot respond.
+The log shows `No API key found for provider "anthropic"` and a `model fallback decision: ... candidate_failed` line, and the Control UI model selector shows a model you did not configure.
+
+Cause::
+OpenClaw owns its configuration on the PersistentVolumeClaim after the first start and records runtime model discovery there.
+Editing the ConfigMap alone does not change the configuration of the running gateway.
+
+Fix::
+Patch the running configuration with `config patch`, not a ConfigMap edit.
+Set `agents.defaults.model` to your provider-prefixed model ID and the provider block under `models.providers`.
+
+[source,bash]
+----
+echo '{"agents": {"defaults": {"model": "vllm/<model-id>"}},
+       "models": {"providers": {"vllm": {"baseUrl": "https://<endpoint>/v1", "apiKey": "not-needed"}}}}' | \
+  oc exec -i deployment/openclaw -c gateway -n my-openclaw -- \
+  node /app/dist/index.js config patch --stdin
+----
+
+The patch mechanism, including the restart hint OpenClaw returns, is described in xref:admin/change-config.adoc[Change the configuration of a running gateway].
+
+Check:: The gateway log shows the expected model after the next reload.
+
+[source,bash]
+----
+oc logs deployment/openclaw -c gateway -n my-openclaw | grep "agent model"
+----
+// expect: contains "agent model"
+
+== Heartbeat messages flooding the chat UI
+
+Symptom::
+Repeated `HEARTBEAT_OK` messages, or "Agent failed before reply" errors, arrive on a fixed cadence.
+
+Cause::
+The heartbeat scheduler fires on a default cadence of `30m`, or `1h` when Anthropic OAuth or token auth is the resolved auth mode.
+When the model provider is misconfigured, each tick turns into an error instead of a quiet acknowledgment.
+
+Fix::
+Set `agents.defaults.heartbeat.every` to `"0m"` to disable the recurring cadence, and set the same on any per-agent entry under `agents.entries`.
+
+[source,bash]
+----
+echo '{"agents": {"defaults": {"heartbeat": {"every": "0m"}}}}' | \
+  oc exec -i deployment/openclaw -c gateway -n my-openclaw -- \
+  node /app/dist/index.js config patch --stdin
+----
+
+[NOTE]
+====
+The roster key is `agents.entries`, not the legacy `agents.list`; `openclaw doctor --fix` migrates `agents.list` to `agents.entries`.
+If any agent has a `heartbeat` block, only those agents run heartbeats, so disable the cadence on each such entry too.
+====
+
+Check:: The system-owned heartbeat job is disabled.
+
+[source,bash]
+----
+oc exec deployment/openclaw -c gateway -n my-openclaw -- \
+  node /app/dist/index.js cron list --all
+----
+// expect: contains "Heartbeat"
+
+== Device pairing required after SSO login
+
+Symptom::
+After the OpenShift SSO login, the Control UI still asks to approve the device.
+
+Cause::
+A browser reaching the gateway through the Route is not a local connection, so the gateway requires a one-time device approval.
+This is an OpenClaw security feature, not an OpenShift problem.
+
+Fix::
+List the pending request and approve it by its exact request ID.
+Running `devices approve` with no ID, or with `--latest`, only previews the newest request and exits, so rerun it with the ID.
+
+[source,bash]
+----
+oc exec deployment/openclaw -c gateway -n my-openclaw -- \
+  node /app/dist/index.js devices list
+oc exec deployment/openclaw -c gateway -n my-openclaw -- \
+  node /app/dist/index.js devices approve <request-id>
+----
+
+The full pairing flow is in xref:user/connect.adoc[Connect and pair your browser].
+
+Check:: `devices list` shows the browser as an approved device.
+
+== Pod stuck in CrashLoopBackOff
+
+Symptom::
+The pod restarts repeatedly.
+The previous container log and the pod's Last State describe a config overwrite or a config observe anomaly.
+
+Cause::
+A state directory on the PersistentVolumeClaim that conflicts with the expected layout can make the gateway rewrite its config and restart.
+A permissions failure on the state directory is a frequent cause as well (see the EPERM entry below).
+
+Fix::
+Read the previous log first, then recover the volume as described in xref:admin/maintain.adoc[Back up, upgrade, and remove].
+
+[source,bash]
+----
+oc logs deployment/openclaw -c gateway -n my-openclaw --previous
+----
+
+[CAUTION]
+====
+Resetting the state volume removes all agent sessions and chat history.
+Back up the state first with the `tar` form in xref:admin/maintain.adoc[Back up, upgrade, and remove], which reads from the mount at `/home/node`.
+The installer names the volume `openclaw-home-pvc`; the raw manifests name it `openclaw-state`.
+====
+
+Check:: After the redeploy, the gateway log reaches `[gateway] ready`.
+
+== Gateway fails with "EPERM: operation not permitted, fchmod"
+
+Symptom::
+The gateway is down or configuration changes fail, and the log shows these lines.
+
+[source,text]
+----
+Doctor could not complete maintenance. Check the reported service state and resolve the failure.
+EPERM: operation not permitted, fchmod
+Unable to create fallback OpenClaw temp dir: /home/node/.cache/openclaw-<uid> | EACCES: permission denied
+----
+
+Cause::
+OpenClaw tightens the permissions of its state directory (`~/.openclaw`) when it starts, migrates state, or writes its configuration, and it needs a writable `~/.cache`.
+Older manifests mounted the volume directly at the state directory, which then belonged to root, while `/home/node` belonged to the image's `node` user, so the cluster's arbitrary UID could change neither.
+
+Fix::
+Apply the current manifests.
+They mount the volume at `/home/node`, and the init container moves any existing state into `~/.openclaw` once.
+The upgrade path is in xref:admin/maintain.adoc[Back up, upgrade, and remove].
+
+Check:: The gateway log reaches `[gateway] ready` after the next start.
+
+== Config clobbered on restart
+
+Symptom::
+Settings revert unexpectedly after a restart, and timestamped `openclaw.json.clobbered.*` or `openclaw.json.rejected.*` files appear beside the active config.
+
+Cause::
+Older manifests copied `openclaw.json` from the ConfigMap on every pod start, overwriting the runtime changes OpenClaw writes to the same file.
+OpenClaw also refuses a config it did not write and restores its last-known-good copy, preserving the rejected payload as a `.clobbered.*` or `.rejected.*` file.
+
+Fix::
+Apply the current manifests, whose init container copies the ConfigMap only when no `openclaw.json` exists yet.
+After that, change the running configuration with `config patch` rather than ConfigMap edits (see xref:admin/change-config.adoc[Change the configuration of a running gateway]).
+If a write was rejected, validate the config and let `doctor` repair it.
+
+[source,bash]
+----
+oc exec deployment/openclaw -c gateway -n my-openclaw -- \
+  node /app/dist/index.js config validate
+oc exec deployment/openclaw -c gateway -n my-openclaw -- \
+  node /app/dist/index.js doctor
+----
+
+Check:: `config validate` reports the configuration as valid, and no new `.clobbered.*` file appears after a restart.
+
+== Device pairing rate limiter
+
+Symptom::
+The browser cannot connect even with valid credentials.
+The log shows `unauthorized ... reason=device_token_mismatch` followed by `unauthorized ... reason=rate_limited`, and the browser reports "Too many failed authentication attempts".
+
+Cause::
+A browser that repeatedly sends a stale device token, for example after the state volume was reset and pairings were cleared, trips the gateway's in-memory rate limiter.
+Once limited, every attempt from that client is rejected, even after the token problem is fixed.
+
+Fix::
+Do both steps.
+First clear the browser's site data for the Route URL, which removes the cached stale token.
+Then restart the pod to reset the in-memory limiter, refresh the browser, and approve the fresh pairing request.
+
+[source,bash]
+----
+oc rollout restart deployment/openclaw -n my-openclaw
+oc exec deployment/openclaw -c gateway -n my-openclaw -- \
+  node /app/dist/index.js devices approve <request-id>
+----
+
+[TIP]
+====
+To clear paired devices in bulk, use `devices clear --yes`; add `--pending` to reject pending requests as well.
+Clear the browser's site data at the same time, or the stale token retry loop returns.
+====
+
+Check:: The browser connects and shows the chat UI without errors.
+
+== Diagnostic commands
+
+Read-only commands that locate most of the problems above.
+
+[source,bash]
+----
+# Pod and container status (2/2 means oauth-proxy and gateway are both up)
+oc get pods -n my-openclaw
+
+# Gateway logs: tail, full, and the previous container after a crash
+oc logs deployment/openclaw -c gateway -n my-openclaw --tail=50
+oc logs deployment/openclaw -c gateway -n my-openclaw
+oc logs deployment/openclaw -c gateway -n my-openclaw --previous
+
+# OAuth proxy logs (installer deployment)
+oc logs deployment/openclaw -c oauth-proxy -n my-openclaw
+
+# Route TLS termination (should be edge)
+oc get route openclaw -n my-openclaw -o jsonpath='{.spec.tls.termination}'
+
+# Active model
+oc logs deployment/openclaw -c gateway -n my-openclaw | grep "agent model"
+
+# On-disk config the gateway is actually using
+oc exec deployment/openclaw -c gateway -n my-openclaw -- \
+  cat /home/node/.openclaw/openclaw.json
+
+# Validate the config and run the self-check
+oc exec deployment/openclaw -c gateway -n my-openclaw -- \
+  node /app/dist/index.js config validate
+oc exec deployment/openclaw -c gateway -n my-openclaw -- \
+  node /app/dist/index.js doctor
+
+# Probe gateway reachability and read-diagnostic scope
+oc exec deployment/openclaw -c gateway -n my-openclaw -- \
+  node /app/dist/index.js gateway probe
+
+# PersistentVolumeClaim status
+oc get pvc -n my-openclaw
+----
