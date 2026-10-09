@@ -89,3 +89,13 @@ rules:
       - 'oc rollout restart'
       - 'config get'
       - '^Check:'
+  - glob: "content/modules/ROOT/pages/admin/tracing.adoc"
+    require:
+      - 'mlflow-integration'
+      - 'redhat-ods-applications'
+      - 'compression: none'
+      - 'X-MLFLOW-WORKSPACE'
+      - 'oc apply -k'
+      - '^Check:'
+    forbid:
+      - 'SIGUSR1'

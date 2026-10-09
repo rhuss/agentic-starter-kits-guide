@@ -1,5 +1,582 @@
 = Send traces to MLflow
-:guide-no-sources:
 
-// STUB
-This page is not written yet.
+// Sources:
+// starter-kits:agents/openclaw/deployment/docs/mlflow-tracing.md:7,35,52-54,62-90,128-129,133-150,152-163,165-188,190-205,212-218,224-244,260-262
+// starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/kustomization.yaml:5-24
+// starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/rbac.yaml:1-31
+// starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/configmap-patch.yaml:1-2,10-19,24,30-49,50-67
+// starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/deployment-patch.yaml:8-15,21-31,47-53
+// starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/otel-collector-config.yaml:4-6,16-18,20-26,33-40,45-57,61-67
+// starter-kits:agents/openclaw/deployment/overlays/example/kustomization.yaml:18-24
+// starter-kits:agents/openclaw/deployment/README.md:87
+// starter-kits:agents/openclaw/deployment/manifests/01-secret.yaml:8-11
+// starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:14-21,37,51
+// starter-kits:agents/openclaw/deployment/manifests/03-pvc.yaml:12
+// starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:45-50
+// starter-kits:docs/mlflow-openshift-auth-and-tls.md:7,86-88,96-122,158,184-191
+// openclaw:docs/gateway/opentelemetry/setup.md:44-48
+// openclaw:docs/gateway/opentelemetry/configuration.md:19-21,26-28
+// openclaw:docs/gateway/opentelemetry/spans-and-events.md:29,32-35,41,45-46,53-54,60,66-68
+// openclaw:extensions/diagnostics-otel/src/service-recorders-tools.ts:354-358,367
+// openclaw:docs/cli/gateway/running.md:29
+// openclaw:docs/cli/gateway/restart-and-supervision.md:24
+// openclaw:docs/cli/config.md:386,572-587
+// openclaw:src/cli/config-cli-input.ts:520-588
+// openclaw:src/cli/config-cli-path.ts:480-519
+// openclaw:src/cli/config-set-dryrun.ts:71
+// openclaw:src/cli/config-cli-runner.ts:573
+// openclaw:docs/tools/plugin.md:81-82,202-203
+// openclaw:extensions/device-pair/openclaw.plugin.json:10
+// openclaw:src/commands/doctor-node-hosting-preconditions.ts:52-60,86-96
+
+Through its `diagnostics-otel` plugin, OpenClaw emits OpenTelemetry traces for every agent turn: the model calls it made, the tools it ran, and how long each step took.
+The recipe's overlay {starter-kits-tree}/agents/openclaw/deployment/overlays/mlflow-tracing[`overlays/mlflow-tracing/`] sends these traces to the shared MLflow instance of Red Hat OpenShift AI (RHOAI), where you browse them turn by turn.
+This page prepares MLflow and the overlay, applies the overlay to a new or a running deployment, and checks that traces arrive.
+It ends with the known issues of the setup.
+
+Run the commands from `agents/openclaw/deployment/` in your checkout of the Agentic Starter Kits repository.
+They use the project `my-openclaw`, as xref:admin/deploy.adoc[Deploy OpenClaw] does, and the overlay copy `overlays/my-tracing`, as the recipe does.
+
+== How the overlay sends traces
+
+xref:overview/architecture.adoc#optional-traces-to-mlflow[Optional: traces to MLflow] shows where the overlay's parts sit in the Pod.
+A trace takes three hops from the gateway to MLflow:
+
+. The gateway's `diagnostics-otel` plugin exports spans over OTLP with `http/protobuf` to `http://localhost:4318`.
+. The `otel-collector` sidecar receives them on `127.0.0.1:4318`, batches them, and adds the resource attributes `service.namespace` and `deployment.environment`.
+. The collector forwards each batch to MLflow at `https://mlflow.redhat-ods-applications.svc.cluster.local:8443`.
+
+Two headers tell MLflow where the traces belong.
+`X-MLFLOW-WORKSPACE` names the workspace, and `x-mlflow-experiment-id` names the experiment in it.
+RHOAI maps every namespace to one MLflow workspace, so your traces land in the workspace `my-openclaw`.
+
+The collector authenticates with the token of the Pod's ServiceAccount `openclaw-tracing`, which it sends as a bearer token.
+MLflow forwards that token to the Kubernetes API and asks whether the identity may act in the workspace's namespace.
+That's why the ServiceAccount needs a RoleBinding to the `mlflow-integration` ClusterRole.
+For TLS, the collector trusts the service CA certificate that OpenShift mounts into every Pod.
+
+== What a trace contains
+
+Each agent turn becomes one trace.
+Its root span, `openclaw.message.processed`, covers the whole turn, and a turn with tool calls produces a tree like this one:
+
+[source,text]
+----
+openclaw.message.processed
+└── openclaw.harness.run
+    └── openclaw.run
+        ├── openclaw.context.assembled
+        ├── openclaw.model.call
+        ├── openclaw.tool.execution
+        ├── openclaw.model.call
+        ├── ...
+        └── openclaw.model.call
+----
+
+[cols="2,3,4",options="header"]
+|===
+|Span
+|Covers
+|Attributes, for example
+
+|`openclaw.message.processed`
+|The turn
+|`openclaw.channel`, `openclaw.outcome`
+
+|`openclaw.harness.run`
+|The harness that coordinates the run
+|`openclaw.harness.items.started`, `openclaw.harness.items.completed`
+
+|`openclaw.run`
+|The agent run
+|`openclaw.provider`, `openclaw.model`, `openclaw.outcome`
+
+|`openclaw.context.assembled`
+|The context sent to the model
+|`openclaw.prompt.size`, `openclaw.history.size`, `openclaw.context.tokens`
+
+|`openclaw.model.call`
+|One call to the model
+|`gen_ai.request.model`, `openclaw.model_call.request_bytes`, `openclaw.model_call.response_bytes`, `openclaw.model_call.time_to_first_byte_ms`
+
+|`openclaw.tool.execution`
+|One tool call
+|`gen_ai.tool.name`, `openclaw.tool.source`, and `openclaw.errorCategory` when the call fails
+
+|`openclaw.diagnostic.phase`
+|Startup diagnostics
+|`openclaw.phase`, `openclaw.phase.cpu_user_ms`, `openclaw.phase.cpu_system_ms`
+|===
+
+Spans carry names, sizes, and timings, not content.
+The overlay doesn't turn on content capture, so MLflow shows no prompt text, model responses, or tool results.
+Every turn is a trace of its own, and the traces of one conversation share no identifier.
+To follow a conversation across turns, you match its traces by time.
+
+== Before you start
+
+The tracing overlay deploys the same gateway as the base manifests.
+It needs the values from xref:admin/configure-model.adoc[Configure the model endpoint and secrets]: the model endpoint, the model ID, the gateway token, the API key, and the storage class.
+On top of that, it needs three things:
+
+RHOAI with MLflow::
+The `mlflow` service runs in `redhat-ods-applications` with `--enable-workspaces`.
+
+The `mlflow-integration` ClusterRole::
+The MLflow operator ships it, sometimes under a prefixed name such as `mlflow-operator-mlflow-integration`.
+RHOAI 3.3.1 doesn't ship it.
+xref:admin/prerequisites.adoc#verify-your-cluster[Verify your cluster] shows how to look for the role, and <<create-clusterrole>> creates it where it's missing.
+
+Tools on your workstation::
+Besides `oc`, the recipe's commands use `curl` and `python3` for the MLflow API, and `yq` to add tracing to a running deployment.
+
+If your account can read `redhat-ods-applications`, confirm that the MLflow service exists.
+
+Check: `oc` lists the Service `mlflow`.
+
+[source,bash]
+----
+oc get service mlflow -n redhat-ods-applications
+----
+// expect: exit 0 and contains "mlflow"
+
+[#create-clusterrole]
+=== Create the ClusterRole where it's missing
+
+A ClusterRole is cluster-scoped, so a cluster administrator creates it.
+Skip this step if `oc get clusterroles | grep mlflow-integration` lists a role.
+The definition comes from the starter kits' shared guide {starter-kits-blob}/docs/mlflow-openshift-auth-and-tls.md[MLflow on OpenShift: Authentication and TLS].
+It grants access to MLflow's pseudo-resources in the API group `mlflow.kubeflow.org`, which exist only for RBAC checks and aren't real CRDs.
+
+. As a cluster administrator, create the ClusterRole `mlflow-integration`.
++
+Check: `oc` reports the ClusterRole as created.
++
+[source,bash]
+----
+oc apply -f - <<'EOF'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: mlflow-integration
+rules:
+  - apiGroups: ["mlflow.kubeflow.org"]
+    resources: ["datasets", "experiments", "registeredmodels"]
+    verbs: ["get", "list", "create", "update"]
+  - apiGroups: ["mlflow.kubeflow.org"]
+    resources: ["gatewayendpoints"]
+    verbs: ["get", "list"]
+  - apiGroups: ["mlflow.kubeflow.org"]
+    resources: ["gatewayendpoints/use"]
+    verbs: ["create"]
+EOF
+----
+// expect: exit 0 and contains "clusterrole.rbac.authorization.k8s.io/mlflow-integration"
+
+=== When MLflow runs in another namespace
+
+The overlay expects RHOAI in `redhat-ods-applications`.
+If your RHOAI runs in another namespace, the comment at the top of the overlay's `otel-collector-config.yaml` asks you to change the `otlphttp` endpoint accordingly.
+Replace `redhat-ods-applications` in `https://mlflow.redhat-ods-applications.svc.cluster.local:8443` with that namespace, and use it in the commands on this page that look up the MLflow Route.
+
+== Copy the overlay
+
+The recipe works on a copy of the overlay, `overlays/my-tracing`.
+
+. Copy the overlay and list its files.
++
+Check: the copy holds the five files of the overlay.
++
+[source,bash]
+----
+cp -r overlays/mlflow-tracing overlays/my-tracing
+ls overlays/my-tracing
+----
+// expect: contains "rbac.yaml" and contains "otel-collector-config.yaml" and contains "configmap-patch.yaml"
+
+== Create the ServiceAccount and the RoleBinding
+
+The collector authenticates as the ServiceAccount `openclaw-tracing`, and the next section creates the MLflow experiment with a token of the same ServiceAccount.
+That's why `rbac.yaml` goes in before the rest of the overlay.
+It creates the ServiceAccount and the RoleBinding `openclaw-tracing-mlflow`, which grants it the `mlflow-integration` ClusterRole in your namespace.
+Without that RoleBinding, MLflow answers with 403.
+
+The project has to exist first.
+If it doesn't, create it as xref:admin/deploy.adoc#create-the-project[Create the project] shows.
+
+. Look up the exact name of the ClusterRole.
++
+Check: the output lists a ClusterRole whose name contains `mlflow-integration`.
++
+[source,bash]
+----
+oc get clusterroles | grep mlflow-integration
+----
+// expect: contains "mlflow-integration"
+
+. Open `overlays/my-tracing/rbac.yaml` and replace `YOUR-MLFLOW-INTEGRATION-CLUSTERROLE` in the RoleBinding with that name, for example:
++
+[source,yaml]
+----
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: mlflow-integration
+----
+
+. Apply the file to the project.
++
+Check: the output names the ServiceAccount `openclaw-tracing` and the RoleBinding `openclaw-tracing-mlflow`.
++
+[source,bash]
+----
+oc apply -f overlays/my-tracing/rbac.yaml -n my-openclaw
+----
+// expect: exit 0 and contains "serviceaccount/openclaw-tracing" and contains "openclaw-tracing-mlflow"
+
+[#create-the-experiment]
+== Create the MLflow experiment
+
+The collector sends every batch to the experiment whose ID is in its `x-mlflow-experiment-id` header, so the experiment has to exist before the first trace.
+You create it through the MLflow REST API, in your workspace and with the ServiceAccount's token.
+Experiment IDs are counted per workspace: an experiment that exists in one workspace may not exist in another.
+
+`oc create token` issues a short-lived token, valid for one hour by default.
+Each listing below creates a fresh token, so each one runs on its own.
+
+. Create the experiment `openclaw-tracing` in the workspace `my-openclaw`.
++
+Check: the response contains the new `experiment_id`.
++
+[source,bash]
+----
+MLFLOW_ROUTE=$(oc get route mlflow -n redhat-ods-applications -o jsonpath='{.spec.host}')
+TOKEN=$(oc create token openclaw-tracing -n my-openclaw)
+curl -s -X POST "https://$MLFLOW_ROUTE/mlflow/api/2.0/mlflow/experiments/create" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "X-MLFLOW-WORKSPACE: my-openclaw" \
+  -d '{"name": "openclaw-tracing"}' | python3 -m json.tool
+----
+// expect: contains "experiment_id"
+
+. Note the `experiment_id`.
+If the experiment exists already, for example from an earlier attempt, look up its ID by name instead.
++
+Check: the response shows the experiment `openclaw-tracing` with its `experiment_id`.
++
+[source,bash]
+----
+MLFLOW_ROUTE=$(oc get route mlflow -n redhat-ods-applications -o jsonpath='{.spec.host}')
+TOKEN=$(oc create token openclaw-tracing -n my-openclaw)
+curl -s "https://$MLFLOW_ROUTE/mlflow/api/2.0/mlflow/experiments/get-by-name?experiment_name=openclaw-tracing" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-MLFLOW-WORKSPACE: my-openclaw" | python3 -m json.tool
+----
+// expect: contains "experiment_id" and contains "openclaw-tracing"
+
+== Fill in the placeholders
+
+The overlay's files carry `YOUR-` placeholders, and after the last two sections you have a value for each of them:
+
+[cols="2,3,3",options="header"]
+|===
+|File
+|Placeholder
+|Value
+
+|`kustomization.yaml`
+|`YOUR-NAMESPACE`
+|`my-openclaw`
+
+|`rbac.yaml`
+|`YOUR-MLFLOW-INTEGRATION-CLUSTERROLE`
+|Filled in above
+
+|`configmap-patch.yaml`
+|`YOUR-VLLM-OR-OGX-ENDPOINT`, `YOUR-MODEL-ID`
+|The host name of your endpoint and the model ID, as in xref:admin/configure-model.adoc[Configure the model endpoint and secrets]
+
+|`otel-collector-config.yaml`
+|`YOUR-NAMESPACE` (twice), `YOUR-EXPERIMENT-ID`
+|`my-openclaw` and the experiment ID
+|===
+
+`configmap-patch.yaml` holds a complete `openclaw.json`, which replaces the one from the base ConfigMap.
+It matches the base file except for the tracing settings, `gateway.controlUi.enabled`, and an `apiKey` of `+${VLLM_API_KEY}+`.
+If you added settings to your own ConfigMap or overlay, such as `gateway.controlUi.allowedOrigins` from xref:admin/access.adoc[Open the Control UI], add them to this file, too.
+
+In `otel-collector-config.yaml`, `YOUR-NAMESPACE` appears in the resource attribute `service.namespace` and in the header `X-MLFLOW-WORKSPACE`.
+The header selects the workspace, so it has to name the namespace in which you created the experiment.
+
+The overlay builds on the base manifests and patches only the ConfigMap and the Deployment, so two settings still come from `manifests/`:
+
+* The Secret `openclaw-secrets` comes from `manifests/01-secret.yaml`.
+Enter your gateway token and API key there, as xref:admin/configure-model.adoc[Configure the model endpoint and secrets] shows.
+`oc apply -k` writes this file into the Secret, also for a deployment that runs already, so placeholders left in it replace your values.
+* The storage class comes from `manifests/03-pvc.yaml`, which asks for `gp3-csi`.
+The tracing overlay has no PersistentVolumeClaim patch like the one in `overlays/example/kustomization.yaml`.
+If you set the storage class in such a patch, add the same patch to `overlays/my-tracing/kustomization.yaml`.
+
+. Replace the placeholders in `kustomization.yaml`, `configmap-patch.yaml`, and `otel-collector-config.yaml`.
+
+. Make sure that no placeholder is left outside the comments.
++
+Check: `grep` finds nothing and exits with status 1.
++
+[source,bash]
+----
+grep -rnE '^[^#]*YOUR-' overlays/my-tracing
+----
+// expect: exit 1
+
+. Make sure that the gateway token placeholder is gone from the Secret.
++
+Check: `grep` finds nothing and exits with status 1.
++
+[source,bash]
+----
+grep -n 'CHANGE-ME' manifests/01-secret.yaml
+----
+// expect: exit 1
+
+. Render the overlay and look at the tracing values.
++
+Check: the ServiceAccount is `openclaw-tracing`, and the workspace header names `my-openclaw`.
++
+[source,bash]
+----
+oc kustomize overlays/my-tracing | grep -E 'serviceAccountName|X-MLFLOW-WORKSPACE|x-mlflow-experiment-id'
+----
+// expect: contains "serviceAccountName: openclaw-tracing" and contains "X-MLFLOW-WORKSPACE: my-openclaw"
+
+== Deploy with tracing
+
+In a project where OpenClaw doesn't run yet, applying the overlay is the whole deployment.
+On the first start, the init container seeds the overlay's `openclaw.json` onto the PVC, so the gateway exports traces from the start.
+If OpenClaw already runs in `my-openclaw`, follow <<running-deployment>> instead.
+
+. Apply the overlay.
+It carries the namespace itself, so the command needs no `-n`.
++
+Check: the command succeeds and names the collector's ConfigMap `otel-collector-config`.
++
+[source,bash]
+----
+oc apply -k overlays/my-tracing
+----
+// expect: exit 0 and contains "configmap/otel-collector-config"
+
+. Look at the Pod status.
+Repeat the command until the Pod shows `2/2 Running`: the gateway and the `otel-collector` sidecar.
+xref:admin/deploy.adoc#watch-the-pod-start[Watch the Pod start] describes the logs that tell you more about the start.
++
+Check: the `openclaw` Pod shows `2/2 Running`.
++
+[source,bash]
+----
+oc get pods -n my-openclaw
+----
+// expect: contains "2/2" and contains "Running"
+
+. Read the gateway's OpenTelemetry settings.
++
+Check: the output shows the endpoint `http://localhost:4318`.
++
+[source,bash]
+----
+oc exec deployment/openclaw -c gateway -n my-openclaw -- node /app/dist/index.js config get diagnostics.otel
+----
+// expect: contains "localhost:4318"
+
+Continue with <<check-traces>>.
+
+[#running-deployment]
+== Add tracing to a running deployment
+
+When OpenClaw already runs in the project, the init container keeps the `openclaw.json` on the PVC, so applying the overlay doesn't change the gateway's configuration.
+The new Pod gets the collector sidecar and the ServiceAccount, but the gateway exports nothing until its own configuration enables tracing.
+The recipe pipes the overlay's `openclaw.json` into `config patch` and then restarts the gateway.
+xref:admin/change-config.adoc[Change the configuration of a running gateway] explains how a patch works.
+
+The patch merges objects, so every setting that `configmap-patch.yaml` doesn't name keeps its value, for example `gateway.controlUi.allowedOrigins`.
+Arrays and scalar values replace their targets, so the model reference, the endpoint, and the model list take their values from the overlay's file.
+Fill in the endpoint and the model ID that the gateway uses now.
+If the model ID differs, the patch drops the current ID from the model list `models.providers.vllm.models`, a path that OpenClaw protects, and OpenClaw refuses the patch.
+
+. Apply the overlay.
++
+Check: the command succeeds and names the collector's ConfigMap `otel-collector-config`.
++
+[source,bash]
+----
+oc apply -k overlays/my-tracing
+----
+// expect: exit 0 and contains "configmap/otel-collector-config"
+
+. Look at the Pod status.
+Repeat the command until the new Pod shows `2/2 Running`.
++
+Check: the `openclaw` Pod shows `2/2 Running`.
++
+[source,bash]
+----
+oc get pods -n my-openclaw
+----
+// expect: contains "2/2" and contains "Running"
+
+. Preview the patch.
+`yq` extracts the `openclaw.json` from `configmap-patch.yaml`, and `--dry-run` validates the result without writing it.
++
+Check: the output reports `Dry run successful`.
++
+[source,bash]
+----
+yq '.data["openclaw.json"]' overlays/my-tracing/configmap-patch.yaml | \
+  oc exec -i deployment/openclaw -c gateway -n my-openclaw -- \
+  node /app/dist/index.js config patch --stdin --dry-run
+----
+// expect: contains "Dry run successful"
++
+If the preview fails with `Refusing to replace models.providers.vllm.models`, the overlay names another model than the running gateway.
+Correct the model ID in `configmap-patch.yaml`.
+If you want to switch models together with tracing, add `--replace-path models.providers.vllm.models` to this command and the next, as xref:admin/change-config.adoc#replace-model[Switch the gateway to another model] explains.
+
+. Apply the patch.
++
+Check: the output reports the applied updates.
++
+[source,bash]
+----
+yq '.data["openclaw.json"]' overlays/my-tracing/configmap-patch.yaml | \
+  oc exec -i deployment/openclaw -c gateway -n my-openclaw -- \
+  node /app/dist/index.js config patch --stdin
+----
+// expect: contains "Applied"
+
+. Restart the Deployment, as the recipe does after this patch.
+The new Pod's init container keeps the patched `openclaw.json` on the PVC.
++
+Check: the command succeeds.
++
+[source,bash]
+----
+oc rollout restart deployment/openclaw -n my-openclaw
+----
+// expect: exit 0
+
+. Look at the Pod status.
+Repeat the command until the new Pod shows `2/2 Running`.
++
+Check: the `openclaw` Pod shows `2/2 Running`.
++
+[source,bash]
+----
+oc get pods -n my-openclaw
+----
+// expect: contains "2/2" and contains "Running"
+
+. Read the gateway's OpenTelemetry settings.
++
+Check: the output shows the endpoint `http://localhost:4318`.
++
+[source,bash]
+----
+oc exec deployment/openclaw -c gateway -n my-openclaw -- node /app/dist/index.js config get diagnostics.otel
+----
+// expect: contains "localhost:4318"
+
+[NOTE]
+====
+The recipe's tracing document lists a gap: after an in-process restart of the gateway, spans are lost until the Pod restarts.
+That doesn't apply to OpenClaw {openclaw-version}.
+In this release, `SIGUSR2` triggers the in-process restart, and a change to `diagnostics.otel` reloads only the exporter, which flushes its spans before the replacement starts.
+The gateway keeps sending traces after an in-process restart.
+====
+
+[#check-traces]
+== Check that traces arrive
+
+MLflow gets a trace for every agent turn, so you need a conversation before it has anything to show.
+
+. Open the Control UI through a port-forward, as xref:admin/access.adoc#open-the-control-ui-through-a-port-forward[Open the Control UI through a port-forward] shows, and send a message.
+xref:user/first-chat.adoc[Hold your first conversation] walks through a conversation.
+
+. Read the collector's log.
+Lines with `error parsing protobuf response` are expected; <<protobuf-response>> explains them.
++
+Check: the log shows no `HTTP Status Code 404`.
++
+[source,bash]
+----
+oc logs deployment/openclaw -c otel-collector -n my-openclaw --tail=20
+----
+// expect: not-contains "Status Code 404"
+
+. Look up the host name of the MLflow Route.
++
+Check: the command prints a host name.
++
+[source,bash]
+----
+oc get route mlflow -n redhat-ods-applications -o jsonpath='{.spec.host}'
+----
+// expect: exit 0 and matches /\./
+
+. Open MLflow, through the RHOAI dashboard or at that host, and go to the experiment `openclaw-tracing` in your workspace `my-openclaw`.
++
+Check: the experiment lists a trace for your message, with `openclaw.message.processed` as its root span.
+
+== Known issues
+
+=== Traces don't appear, and the collector logs 404
+
+The collector logs `Exporting failed. Dropping data.` with `HTTP Status Code 404`, and nothing more.
+
+The experiment ID in `otel-collector-config.yaml` doesn't exist in the target workspace.
+MLflow answers with a 404 without a body, so the collector can log only the status code.
+
+Look up the correct ID with the `get-by-name` call from <<create-the-experiment>>, in the workspace that the `X-MLFLOW-WORKSPACE` header names.
+Put the ID into `x-mlflow-experiment-id` in `overlays/my-tracing/otel-collector-config.yaml` and apply the overlay again.
+The collector reads this file through its `--config` argument when it starts, so restart the Deployment with `oc rollout restart deployment/openclaw -n my-openclaw` afterwards.
+
+[#protobuf-response]
+=== The collector logs "error parsing protobuf response"
+
+For every batch, the collector logs `Exporting failed. Dropping data.` with `error parsing protobuf response: unexpected EOF`.
+This message is harmless.
+MLflow accepts the traces but answers the protobuf request with a JSON body, which the collector can't parse.
+The collector retries the batch and then reports it as dropped, yet MLflow stores each trace once.
+The MLflow server log shows `POST /v1/traces HTTP/1.1" 200 OK` for these requests.
+
+=== MLflow rejects traces with HTTP 400
+
+MLflow's `/v1/traces` endpoint doesn't accept gzip-compressed requests and answers them with HTTP 400 and `Invalid OpenTelemetry protobuf format`.
+Gzip is the default of the collector's `otlphttp` exporter, so the overlay turns it off with `compression: none`.
+Keep that line when you edit `otel-collector-config.yaml`.
+
+=== Metrics go nowhere
+
+The overlay's `openclaw.json` sets `diagnostics.otel.metrics` to `true`, next to `traces`.
+OpenClaw sends metrics to the same base endpoint, `http://localhost:4318`, with `/v1/metrics` appended.
+The collector configuration defines only a `traces` pipeline, so the collector has no path for metrics and doesn't accept them.
+The metrics reach neither MLflow nor any other backend, and the gateway's log doesn't mention the failed exports.
+
+OpenClaw switches each signal on its own.
+To stop the metric exports, patch `diagnostics.otel.metrics` to `false`, as xref:admin/change-config.adoc[Change the configuration of a running gateway] shows, and make the same change in `configmap-patch.yaml`.
+
+=== The overlay's plugin allowlist turns other plugins off
+
+The overlay's `openclaw.json` sets `plugins.allow` to `["diagnostics-otel"]`.
+`plugins.allow` is an exclusive allowlist, so it limits the plugins that the gateway loads.
+Even bundled plugins that are on by default can stay off.
+One of them is `device-pair`, and `openclaw doctor` warns about it:
+
+[source,text]
+----
+The device-pair plugin is not enabled; node onboarding join codes and openclaw connect are unavailable.
+----
+
+The Control UI, browser pairing, and the `devices` commands from xref:admin/access.adoc[Open the Control UI] keep working.
+If you need node onboarding, or any other plugin outside the list, add its ID to `plugins.allow` and keep `diagnostics-otel` in it.
+For `device-pair`, doctor's hint ends with a gateway restart after the change.
