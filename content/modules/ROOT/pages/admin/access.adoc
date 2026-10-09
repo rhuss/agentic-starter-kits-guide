@@ -11,10 +11,11 @@
 // openclaw:docs/web/control-ui.md:184
 // openclaw:docs/web/control-ui/connect-and-pair.md:15-30,38,44,49,52-54
 // openclaw:docs/cli/devices.md:27-29,40-53,116-125,175-183
+// openclaw:docs/cli/config.md:63,79-88,117-121
 // openclaw:docs/gateway/trusted-proxy-auth.md:93
 // openclaw:docs/gateway/troubleshooting/agent-replies-and-control-ui.md:87
 // openclaw:docs/gateway/health.md:77-85
-// openclaw:src/gateway/origin-check.ts:20-27,108-151
+// openclaw:src/gateway/origin-check.ts:20-27,108-151,172-184
 // openclaw:src/gateway/startup-control-ui-origins.ts:10-38
 // openclaw:src/config/gateway-control-ui-origins.ts:7-16,18-24,54-68,71-140
 // openclaw:src/gateway/server/ws-connection/connect-admission.ts:162-177
@@ -48,7 +49,9 @@ The gateway checks three things before a browser gets to the chat, and the two w
 
 OpenClaw treats a request that carries a `Forwarded`, `X-Forwarded-*`, or `X-Real-IP` header as proxy traffic.
 When such a request comes from an address outside `gateway.trustedProxies`, the gateway can't tell which client sent it.
-It then rejects the request on every route that needs gateway authentication, with HTTP 403 and the error type `proxy_attribution_required`.
+It then answers the request with HTTP 403 and the error type `proxy_attribution_required`.
+This applies to nearly every route, including the unauthenticated startup probe `/startupz`.
+Only the liveness probe `/healthz` and routes that plugins authenticate on their own are exempt.
 
 The OpenShift router adds `X-Forwarded-For` headers by default.
 That's why the recipe's Route carries the annotation `haproxy.router.openshift.io/set-forwarded-headers: never`, which tells the router not to add these headers.
@@ -69,7 +72,7 @@ The Route's HTTPS address doesn't, so it has to go into `gateway.controlUi.allow
 
 Every browser has to present the gateway token first, and a local connection doesn't skip this step.
 After the token, a new browser needs a one-time pairing approval.
-The gateway grants it by itself to a direct local connection, one that arrives over loopback without forwarded headers.
+The gateway grants it by itself to a direct local connection: a browser that arrives over loopback without forwarded headers and presents its device identity.
 The recipe documents that a browser on a port-forward gets this automatic approval.
 A browser behind the Route isn't a local connection, so it waits with `disconnected (1008): pairing required` until you approve its request.
 
@@ -96,7 +99,7 @@ Check: the response reports the status `started`.
 +
 [source,bash]
 ----
-curl -s http://localhost:18789/startupz
+curl -sS http://localhost:18789/startupz
 ----
 // expect: contains "started"
 
@@ -133,7 +136,7 @@ oc get route openclaw -n my-openclaw -o yaml | grep set-forwarded-headers
 ----
 // expect: contains "set-forwarded-headers: never"
 +
-If the line is missing, your Route comes from manifests older than the OpenClaw 2026.9 update.
+If the line is missing, your Route most likely comes from manifests older than the OpenClaw 2026.9 update.
 Add the annotation:
 +
 [source,bash]
@@ -149,13 +152,14 @@ Check: the response reports the status `started` and no `proxy_attribution_requi
 [source,bash]
 ----
 ROUTE_HOST=$(oc get route openclaw -n my-openclaw -o jsonpath='{.spec.host}')
-curl -s "https://$ROUTE_HOST/startupz"
+curl -sS "https://$ROUTE_HOST/startupz"
 ----
 // expect: contains "started" and not-contains "proxy_attribution_required"
 
 . Add the Route's address to the allowed origins.
 The patch replaces the whole list, because arrays in a patch replace the existing value.
 If you have added other origins before, include them in the array.
+The port-forward keeps working after the patch, because the gateway accepts a local browser whose origin matches the loopback address it loaded the page from.
 +
 [source,bash]
 ----
