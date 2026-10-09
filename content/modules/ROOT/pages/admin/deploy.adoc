@@ -1,13 +1,17 @@
 = Deploy OpenClaw
 
 // Sources:
-// starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:59,70,127-134,136-165,205,232-235
-// starter-kits:agents/openclaw/deployment/README.md:5-10,22-31
-// starter-kits:agents/openclaw/deployment/docs/mlflow-tracing.md:193-196
+// starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:59,75,97,127-134,136-165,205,232-235
+// starter-kits:agents/openclaw/deployment/README.md:22-31
+// starter-kits:agents/openclaw/deployment/docs/mlflow-tracing.md:136,193-196
 // starter-kits:agents/openclaw/deployment/docs/troubleshooting.md:354-355,360-361
 // starter-kits:agents/openclaw/deployment/manifests/kustomization.yaml:4-14
-// starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:23-26
-// starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:21-55,67-76,97-99,108-128,134-140
+// starter-kits:agents/openclaw/deployment/manifests/01-secret.yaml:4
+// starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:4,23-26
+// starter-kits:agents/openclaw/deployment/manifests/03-pvc.yaml:4
+// starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:4,21-55,69-71,87-96,108-116
+// starter-kits:agents/openclaw/deployment/manifests/05-service.yaml:4
+// starter-kits:agents/openclaw/deployment/manifests/06-route.yaml:4
 // starter-kits:agents/openclaw/deployment/overlays/example/kustomization.yaml:5-9
 // openclaw:docker-entrypoint.mjs:89-116
 // openclaw:src/cli/gateway-cli/run.ts:548,765,862
@@ -15,7 +19,6 @@
 // openclaw:src/gateway/server-startup-readiness.ts:9-12
 // openclaw:src/logging/subsystem.ts:185-233
 // openclaw:src/agents/model-selection-shared.ts:652-665
-// openclaw:docs/gateway/health.md:82,85
 
 With the ConfigMap, the Secret, and the storage class prepared, the deployment itself is short.
 You create the project with `oc new-project`, create the objects with `oc apply -k`, and then read two logs to see whether the gateway came up with your configuration.
@@ -29,49 +32,19 @@ The init container copies the configuration from the ConfigMap only on the first
 == What happens during the first start
 
 The base manifests create six objects: the Secret `openclaw-secrets`, the ConfigMap `openclaw-config`, the PersistentVolumeClaim (PVC) `openclaw-state`, the Deployment `openclaw`, the Service `openclaw`, and the Route `openclaw`.
-xref:overview/architecture.adoc[How the deployment fits together] explains how they connect.
-The Deployment runs one Pod whose two containers start one after the other, and each writes its own log.
-Both run the same OpenClaw image from `ghcr.io/openclaw/openclaw`, pinned by digest.
-The OpenClaw community builds and publishes that image, not Red Hat.
+The Deployment's Pod starts two containers in order, and each writes its own log.
 
-The init container `init-config`::
-It prepares the PVC, which it mounts at `/home/node`, and it's the only container that mounts the ConfigMap.
-On a new, empty PVC, it copies `openclaw.json` from the ConfigMap to `~/.openclaw/openclaw.json` and logs `Config initialized`.
-If the PVC already holds that file, it keeps the file and logs `Config exists, keeping it`.
-On the first start after an upgrade from manifests that kept the state at the root of the PVC, it also moves that state into `~/.openclaw` and logs `Moved existing state to ~/.openclaw`.
+First, the init container `init-config` prepares the PVC and logs what it did:
 
-The container `gateway`::
-It starts once the init container has completed.
-The Deployment passes the gateway command as `args`, so the image's entrypoint stays in place and runs `openclaw doctor --fix` before it starts the gateway.
-If doctor fails, the container exits with doctor's exit code instead of starting the gateway.
-The gateway itself reads the `openclaw.json` on the PVC, never the ConfigMap.
+* `Config initialized`: the PVC held no `openclaw.json` yet, so it copied `openclaw.json` from the ConfigMap to `~/.openclaw/openclaw.json`.
+* `Config exists, keeping it`: `openclaw.json` was already on the PVC, so it left the file alone.
+* `Moved existing state to ~/.openclaw`: on the first start after an upgrade from manifests that kept the state at the root of the PVC, it moved that state into `~/.openclaw`.
+Because the moved state includes `openclaw.json`, `Config exists, keeping it` follows.
 
-Three probes watch the gateway container:
-
-[cols="1,1,2",options="header"]
-|===
-|Probe
-|Endpoint
-|Timing
-
-|Startup
-|`/startupz`
-|Every 10 seconds, up to 30 failures
-
-|Readiness
-|`/startupz`
-|Every 10 seconds
-
-|Liveness
-|`/healthz`
-|Every 30 seconds
-|===
-
-`/startupz` answers with HTTP 200 once the gateway's startup has settled.
-The startup probe's 30 checks, 10 seconds apart, give the gateway a budget of 5 minutes to get there.
-The recipe sized that budget for the doctor pass after an upgrade.
-On the first start with a new image, `openclaw doctor --fix` saves a backup of the state database and migrates the state to the new OpenClaw version, all before the gateway starts.
-xref:admin/maintain.adoc[Back up, upgrade, and remove] covers upgrades and the log lines to check after them.
+Once the init container has completed, the container `gateway` starts.
+Its startup probe allows 5 minutes, 30 checks 10 seconds apart.
+The recipe sized that budget for the `openclaw doctor --fix` pass that runs before the gateway after an upgrade, which xref:admin/maintain.adoc[Back up, upgrade, and remove] covers.
+xref:overview/architecture.adoc#inside-the-pod[Inside the Pod] explains why the gateway starts through `args`, what the doctor pass does, and how the three probes work.
 
 == Create the project
 
@@ -141,7 +114,7 @@ oc apply -k overlays/my-env
 
 [NOTE]
 ====
-The tracing overlay `overlays/mlflow-tracing/` is also applied with `oc apply -k`, but it needs preparation of its own.
+For tracing, the recipe copies `overlays/mlflow-tracing/` to `overlays/my-tracing` and applies the copy with `oc apply -k`, but that overlay needs preparation of its own.
 Its Pod runs an OpenTelemetry collector sidecar next to the gateway and reports `2/2 Running`.
 xref:admin/tracing.adoc[Send traces to MLflow] covers it.
 ====
@@ -153,7 +126,8 @@ It doesn't tell you which configuration the gateway runs with.
 The two logs do: the init container's log shows whether it seeded `openclaw.json` from your ConfigMap, and the gateway's log names the model the gateway loaded.
 
 . Look at the Pod status.
-The startup probe gives the gateway up to 5 minutes to get there, as <<first-start>> explains.
+Repeat the command until the Pod shows `1/1 Running`.
+<<first-start>> explains the gateway's startup budget.
 +
 Check: the `openclaw` Pod shows `1/1 Running`.
 +
@@ -173,8 +147,8 @@ oc logs deployment/openclaw -c init-config -n my-openclaw
 ----
 // expect: matches /Config (initialized|exists, keeping it)/
 +
-`Config exists, keeping it` on what you meant as a fresh deployment means the PVC came from an earlier deployment.
-Your ConfigMap edits then haven't reached the gateway, and xref:admin/change-config.adoc[Change the configuration of a running gateway] shows how to change the configuration it uses.
+`Config exists, keeping it` means that `openclaw.json` was already on the PVC, from an earlier deployment or an earlier start.
+ConfigMap edits made since then haven't reached the gateway, and xref:admin/change-config.adoc[Change the configuration of a running gateway] shows how to change the configuration it uses.
 
 . Look for the gateway's startup lines.
 The recipe lists these lines as the expected output of `oc logs deployment/openclaw -c gateway -n my-openclaw --tail=20`:
@@ -204,7 +178,7 @@ oc logs deployment/openclaw -c gateway -n my-openclaw | grep -E "agent model|rea
 
 . Compare the `agent model` line with your configuration.
 The line shows the model reference from `agents.defaults.model` in the `openclaw.json` that the gateway loaded.
-For vLLM called directly, it reads `vllm/<model-id>`, and behind OGX it reads `vllm/vllm/<model-id>`.
+With the recipe's configuration, that's `vllm/` followed by the model ID from `/v1/models`, for example `vllm/gpt-oss-120b` for vLLM called directly and `vllm/vllm/gpt-oss-120b` behind OGX.
 +
 If the line names another model, the gateway runs with a different configuration than you intended.
 xref:admin/change-config.adoc[Change the configuration of a running gateway] shows how to correct it in the running gateway.
