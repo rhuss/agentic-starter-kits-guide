@@ -9,7 +9,6 @@
 // openshell:docs/kubernetes/setup.mdx:48-58,70-72
 // openshell:docs/kubernetes/setup.mdx:77-83
 // openshell:docs/kubernetes/setup.mdx:203-216
-// openshell:docs/upgrade/0-1-0.mdx:10-14
 // openshell:docs/upgrade/0-1-0.mdx:27
 
 This page is an optional branch of the Administrator guide.
@@ -163,7 +162,6 @@ The selected mode is reported as `seccomp_listener_mode` in the sandbox qualific
 
 [IMPORTANT]
 ====
-An OpenShell 0.0.x installation cannot be upgraded in place.
-If you are replacing an older release, clean up the old runtime and uninstall the existing package first, then install {openshell-version}.
-Sandboxes created with a 0.0.x release must be recreated: remove them before the upgrade and create them again afterward, because their persisted boundary and runtime descriptors are not compatible with the 0.1 release line.
+Sandboxes created with a 0.0.x release are not compatible with {openshell-version}.
+Remove them before upgrading and create them again afterward, because their persisted boundary and runtime descriptors changed.
 ====
