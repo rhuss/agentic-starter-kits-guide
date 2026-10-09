@@ -1,5 +1,145 @@
 = How the sandbox image is built
-:guide-no-sources:
 
-// STUB
-This page is not written yet.
+// Sources:
+// starter-kits:sandboxes/base/Containerfile:12,15-16,19-33,44-46,49-56,59-60,66-73
+// starter-kits:sandboxes/base/entrypoint.sh:4,20-33
+// starter-kits:sandboxes/base/policy.yaml:1-17
+// starter-kits:sandboxes/base/README.md:3,7-12,16,42-47
+// starter-kits:agents/openclaw/deployment/Containerfile.openshell:9,11,13-18,26-33,35-43
+// openshell:docs/how-it-works/policies/schema.mdx:11-13,28
+// openshell:docs/how-it-works/policies/manage-policies.mdx:42-52
+// openclaw:docs/install/node-compatibility.md:21,42
+
+The sandbox image is built in two layers.
+A shared base image, under `sandboxes/base/` in the starter kits, carries the system packages, the sandbox user, the default policy, and the entrypoint, with no language runtime and no agent.
+The OpenClaw flavor, `agents/openclaw/deployment/Containerfile.openshell`, builds on that base and adds Node.js and the OpenClaw CLI.
+The same base is shared by the claude-code, codex, and opencode flavors, so each agent image differs only in the runtime and CLI it layers on top.
+
+This page explains what each layer contains and why.
+To build and publish the image, see xref:developer/build-image.adoc[Build and push the images].
+
+== The shared base
+
+The base starts from UBI 10 minimal (`registry.access.redhat.com/ubi10/ubi-minimal:10.1`) and installs the system tools a sandbox needs, with no language runtime.
+The package set is `ca-certificates`, `curl`, `git`, `jq`, `iproute`, `nftables`, `bind-utils`, `procps-ng`, `vim-minimal`, `tar`, `gzip`, and `shadow-utils`, installed with `microdnf` and `--setopt=install_weak_deps=0` to keep the image small.
+`ripgrep` is not in the UBI repositories, so the base downloads the release binary from GitHub instead.
+
+The base creates two users.
+`supervisor` is a system account with no login shell.
+`sandbox` is the interactive account the workload runs as.
+
+[source,dockerfile]
+----
+ARG USER_UID=1001
+ARG USER_GID=0
+
+RUN useradd -r -s /usr/sbin/nologin supervisor && \
+    useradd -u ${USER_UID} -g ${USER_GID} -d /sandbox -m -s /bin/bash sandbox && \
+    groupadd -f sandbox
+----
+
+The `sandbox` user has UID 1001 and GID 0, the root group.
+Membership of GID 0 is what lets the image run under OpenShift, which assigns an arbitrary UID to a Pod and expects the process to belong to the root group.
+The home directory `/sandbox` and the working directory `/workspace` are both created and set to `1001:0` with mode 775, so the arbitrary UID that OpenShift picks can still write to them through the group.
+The final `USER` line in the base is the UID 1001, and the working directory is `/sandbox`.
+
+== The default policy
+
+The base ships a default OpenShell policy at `/etc/openshell/policy.yaml`.
+An OpenShell policy is a YAML file written in the policy schema, and its first field is `version`, which must be `1`.
+OpenShell rejects a policy that contains unknown fields or duplicate keys.
+
+[source,yaml]
+----
+version: 1
+
+filesystem_policy:
+  include_workdir: true
+  read_only:
+    - /usr
+    - /lib
+    - /proc
+    - /etc
+    - /app
+    - /var/log
+    - /dev/urandom
+  read_write:
+    - /sandbox
+    - /workspace
+    - /tmp
+    - /dev/null
+----
+
+The `filesystem_policy` block lists the paths the workload can read and the paths it can also write.
+`/sandbox` and `/workspace`, the two directories the base created for the user, are both read-write, while the system paths stay read-only.
+The policy also sets `landlock.compatibility` to `best_effort` and a `process` block that runs the workload as the `sandbox` user and group.
+
+A policy baked into the image at `/etc/openshell/policy.yaml` is the image policy.
+OpenShell uses the image policy only when the sandbox has no saved policy, so a policy you pass with `--policy` or through `OPENSHELL_SANDBOX_POLICY` takes precedence.
+
+[IMPORTANT]
+====
+If the image policy does not parse, the sandbox does not start, and OpenShell does not fall back to its default policy.
+Since OpenShell 0.1, a sandbox whose image policy is invalid stays in `Provisioning` with the `ConfigurationReady` reason `ConfigurationInvalid`, and its workload never starts.
+Rebuild the base and flavor images after you change the policy, and keep it valid against the schema.
+====
+
+== The entrypoint
+
+The base installs a single entrypoint at `/usr/local/bin/entrypoint.sh` that chooses which agent to run.
+It reads the agent name from its first argument, falling back to the `AGENT_NAME` environment variable, and then to `bash`.
+
+[source,bash]
+----
+AGENT="${1:-${AGENT_NAME:-bash}}"
+----
+
+For `bash` the entrypoint execs a shell.
+For any other name, it execs that command when it is already on the `PATH`.
+When the command is missing, the entrypoint looks for an install script at `/etc/openshell/agents/<name>.sh`, runs it, and then execs the command.
+A flavor image therefore selects its agent by setting `AGENT_NAME`, and the base needs no change to carry a new flavor.
+
+== The OpenClaw flavor
+
+The OpenClaw flavor builds on the base, adds a Node.js runtime and the OpenClaw CLI, and sets `AGENT_NAME` so the entrypoint starts OpenClaw.
+
+=== Why Node.js comes from the official build
+
+OpenClaw 2026.9.x requires Node.js 24.16 or newer, and it validates the SQLite library that `node:sqlite` loads at runtime.
+The SQLite WAL-reset corruption bug means the loaded library must be a safe version: SQLite 3.51.3 or newer, 3.50.7 or newer within the 3.50.x line, or 3.44.6 or newer within the 3.44.x line.
+The UBI 10 Node.js packages link the system SQLite 3.46.1, which falls outside that range, so OpenClaw refuses to run on them.
+
+The flavor therefore installs a Node.js runtime from the official nodejs.org build, which bundles a current SQLite, rather than from the UBI packages.
+It downloads the archive, verifies it against the published `SHASUMS256.txt` checksum with `sha256sum -c`, and fails the build when the checksum does not match.
+
+[source,dockerfile]
+----
+NODE_TGZ="node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.gz" && \
+curl -fsSLO "https://nodejs.org/dist/v${NODE_VERSION}/${NODE_TGZ}" && \
+curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt" | grep " ${NODE_TGZ}\$" | sha256sum -c - && \
+tar -xzf "${NODE_TGZ}" -C /usr/local --strip-components=1 --no-same-owner
+----
+
+=== Install and verify
+
+With Node.js in place, the flavor installs OpenClaw globally from npm, pinned to the baseline version:
+
+[source,bash,subs="attributes+"]
+----
+npm install -g openclaw@{openclaw-version}
+----
+
+It then verifies the install.
+`openclaw --version` also runs on an unsupported runtime and prints a warning rather than failing, so the flavor captures the output and fails the build when the warning appears.
+
+[source,bash]
+----
+node --version && \
+out="$(openclaw --version 2>&1)" && echo "$out" && \
+! echo "$out" | grep -qi unsupported
+----
+
+The flavor finishes by switching back to UID 1001, setting the working directory to `/workspace`, and exporting `AGENT_NAME=openclaw`.
+That variable is what the base entrypoint reads to start the OpenClaw CLI when the sandbox runs.
+
+With the image understood, continue to xref:developer/build-image.adoc[Build and push the images] to build it for `linux/amd64` and push it to a registry your cluster can pull from.

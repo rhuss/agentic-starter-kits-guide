@@ -134,3 +134,10 @@ rules:
       - 'xref:developer/extend\.adoc'
     require:
       - 'xref:admin/install-openshell\.adoc'
+  - glob: "content/modules/ROOT/pages/developer/sandbox-image.adoc"
+    require:
+      - 'version: 1'
+      - 'filesystem_policy'
+      - 'SHASUMS256'
+      - '(?i)sqlite'
+      - 'AGENT_NAME'
