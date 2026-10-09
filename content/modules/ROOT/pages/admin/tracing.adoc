@@ -9,6 +9,7 @@
 // starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/otel-collector-config.yaml:4-6,16-18,20-26,33-40,45-57,61-67
 // starter-kits:agents/openclaw/deployment/overlays/example/kustomization.yaml:18-24
 // starter-kits:agents/openclaw/deployment/README.md:87
+// starter-kits:agents/openclaw/deployment/manifests/kustomization.yaml:4-8
 // starter-kits:agents/openclaw/deployment/manifests/01-secret.yaml:8-11
 // starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:14-21,37,51
 // starter-kits:agents/openclaw/deployment/manifests/03-pvc.yaml:12
@@ -25,7 +26,7 @@
 // openclaw:src/cli/config-cli-path.ts:480-519
 // openclaw:src/cli/config-set-dryrun.ts:71
 // openclaw:src/cli/config-cli-runner.ts:573
-// openclaw:docs/tools/plugin.md:81-82,202-203
+// openclaw:docs/tools/plugin.md:75-82,202-203
 // openclaw:extensions/device-pair/openclaw.plugin.json:10
 // openclaw:src/commands/doctor-node-hosting-preconditions.ts:52-60,86-96
 
@@ -130,10 +131,12 @@ xref:admin/prerequisites.adoc#verify-your-cluster[Verify your cluster] shows how
 Tools on your workstation::
 Besides `oc`, the recipe's commands use `curl` and `python3` for the MLflow API, and `yq` to add tracing to a running deployment.
 
-If your account can read `redhat-ods-applications`, confirm that the MLflow service exists.
+If your account can read `redhat-ods-applications`, confirm that the MLflow Service exists.
 
+. Confirm that the `mlflow` Service runs in `redhat-ods-applications`.
++
 Check: `oc` lists the Service `mlflow`.
-
++
 [source,bash]
 ----
 oc get service mlflow -n redhat-ods-applications
@@ -177,7 +180,8 @@ EOF
 
 The overlay expects RHOAI in `redhat-ods-applications`.
 If your RHOAI runs in another namespace, the comment at the top of the overlay's `otel-collector-config.yaml` asks you to change the `otlphttp` endpoint accordingly.
-Replace `redhat-ods-applications` in `https://mlflow.redhat-ods-applications.svc.cluster.local:8443` with that namespace, and use it in the commands on this page that look up the MLflow Route.
+Replace `redhat-ods-applications` in `https://mlflow.redhat-ods-applications.svc.cluster.local:8443` with that namespace.
+The MLflow Route lookups on this page and the Service check in _Before you start_ name `redhat-ods-applications` too, so use your namespace there as well.
 
 == Copy the overlay
 
@@ -277,7 +281,7 @@ curl -s "https://$MLFLOW_ROUTE/mlflow/api/2.0/mlflow/experiments/get-by-name?exp
 
 == Fill in the placeholders
 
-The overlay's files carry `YOUR-` placeholders, and after the last two sections you have a value for each of them:
+The overlay's files carry `YOUR-` placeholders, and you now have a value for each of them:
 
 [cols="2,3,3",options="header"]
 |===
@@ -314,9 +318,9 @@ The overlay builds on the base manifests and patches only the ConfigMap and the 
 * The Secret `openclaw-secrets` comes from `manifests/01-secret.yaml`.
 Enter your gateway token and API key there, as xref:admin/configure-model.adoc[Configure the model endpoint and secrets] shows.
 `oc apply -k` writes this file into the Secret, also for a deployment that runs already, so placeholders left in it replace your values.
-* The storage class comes from `manifests/03-pvc.yaml`, which asks for `gp3-csi`.
+* The storage class comes from `manifests/03-pvc.yaml`, which ships with `gp3-csi`.
 The tracing overlay has no PersistentVolumeClaim patch like the one in `overlays/example/kustomization.yaml`.
-If you set the storage class in such a patch, add the same patch to `overlays/my-tracing/kustomization.yaml`.
+If you set the storage class through such a patch in `overlays/my-env/kustomization.yaml`, as xref:admin/configure-model.adoc[Configure the model endpoint and secrets] shows, add the same patch to `overlays/my-tracing/kustomization.yaml`.
 
 . Replace the placeholders in `kustomization.yaml`, `configmap-patch.yaml`, and `otel-collector-config.yaml`.
 
@@ -538,7 +542,7 @@ MLflow answers with a 404 without a body, so the collector can log only the stat
 
 Look up the correct ID with the `get-by-name` call from <<create-the-experiment>>, in the workspace that the `X-MLFLOW-WORKSPACE` header names.
 Put the ID into `x-mlflow-experiment-id` in `overlays/my-tracing/otel-collector-config.yaml` and apply the overlay again.
-The collector reads this file through its `--config` argument when it starts, so restart the Deployment with `oc rollout restart deployment/openclaw -n my-openclaw` afterwards.
+If OpenClaw already runs in the project, restart the Deployment with `oc rollout restart deployment/openclaw -n my-openclaw`, as the recipe does when it adds tracing to a running gateway (<<running-deployment>>).
 
 [#protobuf-response]
 === The collector logs "error parsing protobuf response"
@@ -578,5 +582,5 @@ The device-pair plugin is not enabled; node onboarding join codes and openclaw c
 ----
 
 The Control UI, browser pairing, and the `devices` commands from xref:admin/access.adoc[Open the Control UI] keep working.
-If you need node onboarding, or any other plugin outside the list, add its ID to `plugins.allow` and keep `diagnostics-otel` in it.
+If you need node onboarding, or any other plugin outside the list, add its ID to `plugins.allow` (and enable it if it isn't on by default) and keep `diagnostics-otel` in it.
 For `device-pair`, doctor's hint ends with a gateway restart after the change.
