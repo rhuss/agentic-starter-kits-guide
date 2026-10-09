@@ -1,5 +1,224 @@
 = Deploy OpenClaw
-:guide-no-sources:
 
-// STUB
-This page is not written yet.
+// Sources:
+// starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:59,70,127-134,136-165,205,232-235
+// starter-kits:agents/openclaw/deployment/README.md:5-10,22-31
+// starter-kits:agents/openclaw/deployment/docs/mlflow-tracing.md:193-196
+// starter-kits:agents/openclaw/deployment/docs/troubleshooting.md:354-355,360-361
+// starter-kits:agents/openclaw/deployment/manifests/kustomization.yaml:4-14
+// starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:23-26
+// starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:21-55,67-76,97-99,108-128,134-140
+// starter-kits:agents/openclaw/deployment/overlays/example/kustomization.yaml:5-9
+// openclaw:docker-entrypoint.mjs:89-116
+// openclaw:src/cli/gateway-cli/run.ts:548,765,862
+// openclaw:src/gateway/server-startup-log.ts:41-82,123-127,181,261-277
+// openclaw:src/gateway/server-startup-readiness.ts:9-12
+// openclaw:src/logging/subsystem.ts:185-233
+// openclaw:src/agents/model-selection-shared.ts:652-665
+// openclaw:docs/gateway/health.md:82,85
+
+With the ConfigMap, the Secret, and the storage class prepared, the deployment itself is short.
+You create the project with `oc new-project`, create the objects with `oc apply -k`, and then read two logs to see whether the gateway came up with your configuration.
+The deployment is done when the Pod shows `1/1 Running` and the gateway log reports `[gateway] ready` along with the model you configured.
+
+Run the commands from `agents/openclaw/deployment/` in your checkout of the Agentic Starter Kits repository, the directory where you edited the files.
+If you haven't filled in the endpoint, the model ID, the gateway token, and the storage class yet, do that first in xref:admin/configure-model.adoc[Configure the model endpoint and secrets].
+The init container copies the configuration from the ConfigMap only on the first start, so it pays to get it right before you apply anything.
+
+[#first-start]
+== What happens during the first start
+
+The base manifests create six objects: the Secret `openclaw-secrets`, the ConfigMap `openclaw-config`, the PersistentVolumeClaim (PVC) `openclaw-state`, the Deployment `openclaw`, the Service `openclaw`, and the Route `openclaw`.
+xref:overview/architecture.adoc[How the deployment fits together] explains how they connect.
+The Deployment runs one Pod whose two containers start one after the other, and each writes its own log.
+Both run the same OpenClaw image from `ghcr.io/openclaw/openclaw`, pinned by digest.
+The OpenClaw community builds and publishes that image, not Red Hat.
+
+The init container `init-config`::
+It prepares the PVC, which it mounts at `/home/node`, and it's the only container that mounts the ConfigMap.
+On a new, empty PVC, it copies `openclaw.json` from the ConfigMap to `~/.openclaw/openclaw.json` and logs `Config initialized`.
+If the PVC already holds that file, it keeps the file and logs `Config exists, keeping it`.
+On the first start after an upgrade from manifests that kept the state at the root of the PVC, it also moves that state into `~/.openclaw` and logs `Moved existing state to ~/.openclaw`.
+
+The container `gateway`::
+It starts once the init container has completed.
+The Deployment passes the gateway command as `args`, so the image's entrypoint stays in place and runs `openclaw doctor --fix` before it starts the gateway.
+If doctor fails, the container exits with doctor's exit code instead of starting the gateway.
+The gateway itself reads the `openclaw.json` on the PVC, never the ConfigMap.
+
+Three probes watch the gateway container:
+
+[cols="1,1,2",options="header"]
+|===
+|Probe
+|Endpoint
+|Timing
+
+|Startup
+|`/startupz`
+|Every 10 seconds, up to 30 failures
+
+|Readiness
+|`/startupz`
+|Every 10 seconds
+
+|Liveness
+|`/healthz`
+|Every 30 seconds
+|===
+
+`/startupz` answers with HTTP 200 once the gateway's startup has settled.
+The startup probe's 30 checks, 10 seconds apart, give the gateway a budget of 5 minutes to get there.
+The recipe sized that budget for the doctor pass after an upgrade.
+On the first start with a new image, `openclaw doctor --fix` saves a backup of the state database and migrates the state to the new OpenClaw version, all before the gateway starts.
+xref:admin/maintain.adoc[Back up, upgrade, and remove] covers upgrades and the log lines to check after them.
+
+== Create the project
+
+None of the base manifests sets a namespace, so they land in the project you name with `-n`.
+The example overlay sets the namespace `my-openclaw` in its `kustomization.yaml` instead.
+Either way, the project has to exist before you apply.
+This guide uses `my-openclaw`, as the recipe does.
+If you pick another name, use it in every command on this page and in the `namespace:` field of your overlay.
+
+. Create the project.
++
+[source,bash]
+----
+oc new-project my-openclaw
+----
+
+. Confirm that the project exists.
++
+Check: `oc` shows the project `my-openclaw`.
++
+[source,bash]
+----
+oc get project my-openclaw
+----
+// expect: exit 0 and contains "my-openclaw"
+
+== Apply the manifests or your overlay
+
+Apply either the base manifests or your overlay.
+An overlay copied from `overlays/example/` builds on the base manifests, so it creates the same six objects with your patches applied.
+If `oc` also prints a warning that `commonLabels` is deprecated, that comes from the recipe's base `kustomization.yaml` and doesn't affect the result.
+
+=== With the base manifests
+
+. Apply the manifests to the project.
++
+Check: the command succeeds and names the recipe's objects, among them the Secret `openclaw-secrets` and the PVC `openclaw-state`.
++
+[source,bash]
+----
+oc apply -k manifests/ -n my-openclaw
+----
+// expect: exit 0 and contains "openclaw-secrets" and contains "openclaw-state"
+
+=== With an overlay
+
+. Make sure the overlay's `namespace:` field names the project you created.
++
+Check: the field shows `my-openclaw`.
++
+[source,bash]
+----
+grep '^namespace:' overlays/my-env/kustomization.yaml
+----
+// expect: contains "namespace: my-openclaw"
+
+. Apply the overlay.
+It carries the namespace itself, so the command needs no `-n`.
++
+Check: the command succeeds and names the recipe's objects, among them the Secret `openclaw-secrets` and the PVC `openclaw-state`.
++
+[source,bash]
+----
+oc apply -k overlays/my-env
+----
+// expect: exit 0 and contains "openclaw-secrets" and contains "openclaw-state"
+
+[NOTE]
+====
+The tracing overlay `overlays/mlflow-tracing/` is also applied with `oc apply -k`, but it needs preparation of its own.
+Its Pod runs an OpenTelemetry collector sidecar next to the gateway and reports `2/2 Running`.
+xref:admin/tracing.adoc[Send traces to MLflow] covers it.
+====
+
+== Watch the Pod start
+
+The Pod status tells you whether both containers got through their start.
+It doesn't tell you which configuration the gateway runs with.
+The two logs do: the init container's log shows whether it seeded `openclaw.json` from your ConfigMap, and the gateway's log names the model the gateway loaded.
+
+. Look at the Pod status.
+The startup probe gives the gateway up to 5 minutes to get there, as <<first-start>> explains.
++
+Check: the `openclaw` Pod shows `1/1 Running`.
++
+[source,bash]
+----
+oc get pods -n my-openclaw
+----
+// expect: contains "1/1" and contains "Running"
+
+. Read the init container's log.
++
+Check: on a new PVC, the log shows `Config initialized`; on a PVC that already held a configuration, it shows `Config exists, keeping it`.
++
+[source,bash]
+----
+oc logs deployment/openclaw -c init-config -n my-openclaw
+----
+// expect: matches /Config (initialized|exists, keeping it)/
++
+`Config exists, keeping it` on what you meant as a fresh deployment means the PVC came from an earlier deployment.
+Your ConfigMap edits then haven't reached the gateway, and xref:admin/change-config.adoc[Change the configuration of a running gateway] shows how to change the configuration it uses.
+
+. Look for the gateway's startup lines.
+The recipe lists these lines as the expected output of `oc logs deployment/openclaw -c gateway -n my-openclaw --tail=20`:
++
+[source,text]
+----
+[gateway] loading configuration…
+[gateway] resolving authentication…
+[gateway] starting...
+[gateway] agent model: vllm/<your-model> (thinking=off, fast=off)
+[gateway] http server listening (... plugins; ...s)
+[gateway] ready
+----
++
+The real log holds more lines than these, among them the path of the log file and details about the runtime.
+The `http server listening` line names the loaded plugins and the startup time, and the parentheses after the model show its thinking and fast mode settings.
+If the doctor pass prints anything, it comes before the gateway's lines, because the entrypoint runs doctor first.
+To check the two lines that matter, filter the whole log for them.
++
+Check: the output has an `agent model` line with your model reference and the line `[gateway] ready`.
++
+[source,bash]
+----
+oc logs deployment/openclaw -c gateway -n my-openclaw | grep -E "agent model|ready"
+----
+// expect: contains "agent model:" and contains "[gateway] ready"
+
+. Compare the `agent model` line with your configuration.
+The line shows the model reference from `agents.defaults.model` in the `openclaw.json` that the gateway loaded.
+For vLLM called directly, it reads `vllm/<model-id>`, and behind OGX it reads `vllm/vllm/<model-id>`.
++
+If the line names another model, the gateway runs with a different configuration than you intended.
+xref:admin/change-config.adoc[Change the configuration of a running gateway] shows how to correct it in the running gateway.
+
+== If the Pod doesn't become ready
+
+After a crash, the log of the previous gateway container shows what happened:
+
+[source,bash]
+----
+oc logs deployment/openclaw -c gateway -n my-openclaw --previous
+----
+
+When `openclaw doctor --fix` fails, the container exits before the gateway starts, so that log has no `[gateway] loading configuration…` line.
+xref:reference/troubleshooting.adoc[Troubleshooting] collects known problems with their fixes, along with further diagnostic commands.
+
+With the gateway ready, continue with xref:admin/access.adoc[Open the Control UI] to reach it from your browser.

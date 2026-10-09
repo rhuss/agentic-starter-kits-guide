@@ -64,3 +64,11 @@ rules:
       - 'storageClassName|storage class'
       - 'oc get storageclass'
       - '^Check:'
+  - glob: "content/modules/ROOT/pages/admin/deploy.adoc"
+    require_order:
+      - 'oc new-project|oc create (namespace|ns)'
+      - 'oc apply -k'
+      - '\[gateway\] ready'
+    require:
+      - '^Check:'
+      - 'xref:admin/access\.adoc'
