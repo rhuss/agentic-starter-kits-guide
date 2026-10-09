@@ -1,5 +1,125 @@
 = Extend the recipe
-:guide-no-sources:
 
-// STUB
-This page is not written yet.
+// Sources:
+// starter-kits:agents/openclaw/deployment/overlays/example/kustomization.yaml:1-24
+// starter-kits:agents/openclaw/deployment/README.md:82-90
+// starter-kits:agents/openclaw/templates/openclaw_agent/agent.yaml:1-12
+// starter-kits:agents/openclaw/templates/openclaw_agent/README.md:1-25
+// starter-kits:AGENTS.md:48-49,126,146
+// starter-kits:tests/integration/utils.py:28-32
+// starter-kits:tests/behavioral/deterministic/deploy_agents.py:82-83,218-253
+// starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:22,45,51-57
+// starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:41-50,80-99
+// openclaw:docs/concepts/agent-workspace.md:10-13,22-26,70-90
+// openclaw:docs/tools/creating-skills.md:12-33
+// openclaw:docs/plugins/manage-plugins.md:13-23
+// openclaw:docs/gateway/config-channels.md:10-16
+// openclaw:docs/gateway/config-tools/tool-policy.md:71-72,179-189
+
+The recipe is a starting point, not a fixed product.
+You extend it at two layers.
+The deployment layer is the Kustomize manifests and the agent template that place OpenClaw on the cluster.
+The configuration layer is OpenClaw itself: its workspace files, skills, plugins, tools, and channels.
+
+Two settings in the recipe's shipped configuration shape what the configuration layer does.
+The `tools.deny` list removes the web and browser tools, and `channels` is empty, so the Control UI chat is the only way in.
+The last section explains what those two settings mean before you add anything on top of them.
+
+== Extend the deployment with an overlay
+
+A Kustomize overlay is the recipe's extension point for the deployment.
+It references the base manifests and layers your changes on top, so your edits stay separate from the files the recipe ships.
+The example overlay under `overlays/example/` is the scaffold you copy and extend.
+
+The overlay's `kustomization.yaml` sets the namespace, patches the ConfigMap with your `openclaw.json`, and patches the PersistentVolumeClaim with your storage class:
+
+[source,yaml]
+----
+resources:
+  - ../../manifests
+
+namespace: my-openclaw
+
+patches:
+  - target:
+      kind: ConfigMap
+      name: openclaw-config
+    path: configmap-patch.yaml
+
+  - target:
+      kind: PersistentVolumeClaim
+      name: openclaw-state
+    patch: |
+      - op: replace
+        path: /spec/storageClassName
+        value: managed-csi
+----
+
+The ConfigMap patch replaces the whole `openclaw.json`, so it is where every OpenClaw configuration change below belongs for a fresh deployment.
+Resource limits are a further target: to raise the gateway's memory or CPU, add a patch for the Deployment `openclaw`, the same way the storage class patch targets the PersistentVolumeClaim.
+
+xref:admin/configure-model.adoc[Configure the model endpoint and secrets] describes which setting goes into which file.
+Changing the configuration of a deployment that is already running is a separate task, because the gateway reads its config from the PersistentVolumeClaim rather than the ConfigMap once it has started.
+xref:admin/change-config.adoc[Change the configuration of a running gateway] covers that path.
+
+== The agent template
+
+The recipe carries an agent template under `templates/openclaw_agent/` that registers OpenClaw in the starter kits catalog.
+Its `agent.yaml` is a metadata card.
+It declares the name `openclaw-agent`, the display name `OpenClaw`, the framework `openclaw`, the labels `coding-agent` and `gateway`, an inline logo, `deploymentModel: config-driven`, and two optional environment variables, `OPENCLAW_GATEWAY_TOKEN` and `VLLM_API_KEY`.
+The template's `README.md` names the supported backends (vLLM, and vLLM through OGX) and the key features, and points to the deployment guide for the install steps.
+
+The repository tooling reads `agent.yaml` at runtime.
+The integration-test helpers resolve an agent's directory from its `agent.yaml` and take the agent name from the file's `name` field, which must be present.
+The behavioral deploy tooling reads the same file for the `deploymentModel` and for the `env.required` and `env.optional` lists that drive its environment checks.
+When you add or rename an environment variable, update `env` in `agent.yaml` so the tooling and any `.env.example` stay in step.
+
+OpenClaw is a non-standard agent in the catalog.
+It ships no Makefile, no Dockerfile, and no FastAPI service, and it runs a pre-built upstream image rather than one the repository builds.
+So the shared build-and-deploy path that other agents drive through their Makefile does not apply here.
+You deploy this recipe through the Kustomize manifests and overlays instead.
+
+[NOTE]
+====
+The behavioral deploy tooling recognizes only two `deploymentModel` values, an unset model and `flow-import`.
+It does not implement handling for the `config-driven` value that `agent.yaml` declares, so treat that field as catalog metadata rather than as a deployment switch.
+====
+
+== Extend OpenClaw itself
+
+OpenClaw's own extension points live in the state directory on the PersistentVolumeClaim.
+The gateway runs with `OPENCLAW_CONFIG_DIR` set to `/home/node/.openclaw`, and the init container creates the workspace at `/home/node/.openclaw/workspace` on first start.
+Because this directory is on the persistent volume, the files you add there survive restarts and image upgrades.
+
+Workspace files::
+The workspace is the agent's home, separate from `~/.openclaw`, which holds config, credentials, and sessions.
+OpenClaw loads a set of standard files from it at the start of a session, including `AGENTS.md` for operating instructions and `SOUL.md` for persona and tone.
+You edit these through *Settings -> Agents -> Files* in the Control UI.
+See the upstream https://docs.openclaw.ai/concepts/agent-workspace[Agent workspace] documentation for the full file map.
+
+Skills::
+A skill is a directory with a `SKILL.md` file that teaches the agent how and when to use a tool.
+Skills live in the workspace `skills/` folder, so a new skill goes under `~/.openclaw/workspace/skills/`.
+See the upstream https://docs.openclaw.ai/tools/creating-skills[Creating skills] documentation.
+
+Plugins::
+Plugins add channels, tools, and providers.
+You manage them from the *Plugins* page in the Control UI, which installs, enables, and configures a plugin against the running gateway, or from the `openclaw plugins` CLI.
+See the upstream https://docs.openclaw.ai/plugins/manage-plugins[Manage plugins] documentation.
+
+== What the recipe's tool and channel settings mean for extensions
+
+The recipe ships a deliberately narrow configuration, and two parts of it decide what your extensions can do.
+
+The `tools.deny` list denies `group:web` and `browser`.
+`group:web` covers the `web_search`, `x_search`, and `web_fetch` tools, and `browser` is the browser-control tool.
+A deny wins over an allow in OpenClaw's tool policy, so a skill or plugin that relies on web search or on driving a browser does nothing until you remove the matching entry from `tools.deny`.
+
+The `channels` object is empty.
+A channel is a messaging surface such as Slack or Discord, and each one starts only when its section exists under `channels`.
+With none configured, the Control UI chat is the only channel, and most channels install as plugins first and are then configured as `channels.<id>`.
+See the upstream https://docs.openclaw.ai/gateway/config-channels[channel configuration] and https://docs.openclaw.ai/gateway/config-tools/tool-policy[tool policy] documentation for the keys.
+
+You change either setting the same way you change any other OpenClaw configuration.
+For a fresh deployment, edit the overlay's `configmap-patch.yaml`.
+For a deployment that is already running, patch the live gateway, as xref:admin/change-config.adoc[Change the configuration of a running gateway] shows, because edits to the ConfigMap do not reach a gateway that has already seeded its state.

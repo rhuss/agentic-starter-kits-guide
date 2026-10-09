@@ -158,3 +158,8 @@ rules:
       - '/usr/local/bin/node'
       - '/workspace'
       - '^Check:'
+  - glob: "content/modules/ROOT/pages/developer/extend.adoc"
+    require:
+      - 'kustomization\.yaml'
+      - 'agent\.yaml'
+      - 'tools\.deny|tools\.profile|"deny"'
