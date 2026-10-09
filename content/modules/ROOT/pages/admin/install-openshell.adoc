@@ -1,5 +1,169 @@
 = Install OpenShell for sandboxes
-:guide-no-sources:
 
-// STUB
-This page is not written yet.
+// Sources:
+// openshell:docs/kubernetes/openshift.mdx:11-20
+// openshell:docs/kubernetes/openshift.mdx:22-35
+// openshell:docs/kubernetes/openshift.mdx:38-49
+// openshell:docs/kubernetes/openshift.mdx:51-74
+// openshell:docs/kubernetes/openshift.mdx:77-84
+// openshell:docs/kubernetes/setup.mdx:48-58,70-72
+// openshell:docs/kubernetes/setup.mdx:77-83
+// openshell:docs/kubernetes/setup.mdx:203-216
+// openshell:docs/upgrade/0-1-0.mdx:10-14
+// openshell:docs/upgrade/0-1-0.mdx:27
+
+This page is an optional branch of the Administrator guide.
+Follow it only for clusters that will run OpenClaw inside an OpenShell sandbox, the path that xref:overview/choose-a-path.adoc[Choose how to run OpenClaw] describes as the one meant for experimentation.
+It installs an OpenShell gateway on OpenShift and registers it with the `openshell` CLI, so that a developer can create sandboxes against it in xref:developer/run-in-sandbox.adoc[Run OpenClaw in an OpenShell sandbox].
+
+OpenShell runs its sandboxes without elevated privileges.
+The Kubernetes driver reads the UID range that OpenShift assigns to the namespace and renders the sandbox and supervisor with a numeric non-root identity from that range, so OpenShell needs neither the `privileged` SCC nor any added Linux capability.
+
+== Prerequisites
+
+Have the following in place before you install:
+
+* An OpenShift 4.x cluster with `oc` configured.
+* Helm 3.x.
+* The Agent Sandbox controller and its CRDs, installed on the cluster (the next section covers them).
+* A CNI that enforces ingress and egress `NetworkPolicy` in sandbox namespaces.
+
+[WARNING]
+====
+Your cluster must enforce ingress and egress `NetworkPolicy` in every sandbox namespace.
+OpenShell creates the policies, but Kubernetes does not verify that the CNI applies them.
+Without enforcement, a sandbox workload can reach the network directly and bypass supervisor network policy.
+Verify CNI support before you install OpenShell.
+====
+
+[WARNING]
+====
+Verify that the selected OpenShift runtime profile permits an unprivileged process to install a nested seccomp user-notification filter and to use Landlock.
+OpenShell fails sandbox startup when either capability-free runtime probe fails.
+====
+
+== Install the Agent Sandbox controller and CRDs
+
+OpenShell provisions sandbox Pods through the Agent Sandbox Kubernetes SIG project.
+The OpenShell Helm chart does not install or upgrade the cluster-scoped Agent Sandbox CRDs or controller, so install them first.
+
+. Apply the latest Agent Sandbox release manifest.
++
+This creates the `agent-sandbox-system` namespace, installs the `sandboxes.agents.x-k8s.io` CRD, and starts the controller.
++
+[source,bash]
+----
+oc apply -f https://github.com/kubernetes-sigs/agent-sandbox/releases/latest/download/sandbox.yaml
+----
+
+. Confirm the controller Pod is running before you continue.
++
+Check: the controller Pod reaches `Running`.
++
+[source,bash]
+----
+oc -n agent-sandbox-system get pods
+----
+// expect: contains "Running"
+
+== Install the OpenShell gateway
+
+Install the chart into its own namespace and keep the default restricted security posture.
+The chart generates its PKI secrets on first install through pre-install Helm hooks, so no manual secret creation is needed.
+
+. Create the namespace.
++
+[source,bash]
+----
+oc create ns openshell
+----
+
+. Install the OpenShell Helm chart in version {openshell-version}.
++
+[source,bash,subs="attributes+"]
+----
+helm install openshell oci://ghcr.io/nvidia/openshell/helm-chart \
+  --version {openshell-version} \
+  --namespace openshell
+----
+
+. Wait for the gateway StatefulSet to roll out, then confirm it is ready.
++
+Check: the StatefulSet reports one ready replica.
++
+[source,bash]
+----
+oc -n openshell rollout status statefulset/openshell
+oc -n openshell get statefulset openshell
+----
+// expect: contains "1/1"
+
+The gateway runs as a StatefulSet by default.
+If you set `workload.kind=deployment`, wait on `deployment/openshell` instead.
+
+== Register the gateway with the CLI
+
+The chart serves the gateway inside the cluster.
+To reach it from your workstation for local evaluation, forward its port, install the TLS bundle so the CLI trusts the gateway certificate, then register it.
+
+[WARNING]
+====
+The port-forward is for local evaluation only.
+For a shared environment, expose the gateway through your ingress controller or an access proxy, and configure OIDC or a trusted access proxy for user authentication.
+====
+
+. In one terminal, forward the gateway port and keep it running.
++
+[source,bash]
+----
+oc -n openshell port-forward svc/openshell 8080:8080
+----
+
+. In another terminal, install the TLS client bundle so the CLI can verify the gateway certificate.
++
+The chart generates an mTLS bundle for transport security.
+Copy it into the gateway's CLI configuration directory.
+The server certificate SANs include `localhost` and `127.0.0.1`, so hostname verification passes over the port-forward without extra flags.
++
+[source,bash]
+----
+mkdir -p ~/.config/openshell/gateways/openshift/mtls
+oc -n openshell get secret openshell-client-tls \
+  -o jsonpath='{.data.ca\.crt}'  | base64 -d > ~/.config/openshell/gateways/openshift/mtls/ca.crt
+oc -n openshell get secret openshell-client-tls \
+  -o jsonpath='{.data.tls\.crt}' | base64 -d > ~/.config/openshell/gateways/openshift/mtls/tls.crt
+oc -n openshell get secret openshell-client-tls \
+  -o jsonpath='{.data.tls\.key}' | base64 -d > ~/.config/openshell/gateways/openshift/mtls/tls.key
+----
+
+. Register the gateway with the CLI and confirm it is reachable.
++
+Check: the CLI reports the gateway is reachable.
++
+[source,bash]
+----
+openshell gateway add https://127.0.0.1:8080 --local --name openshift
+openshell status
+----
+// expect: exit 0
+
+== Caveats
+
+Two limitations apply to sandboxes on this platform.
+
+[WARNING]
+====
+OpenShift nodes run RHCOS, which currently ships a RHEL 9.x kernel (5.14).
+That kernel predates `SECCOMP_FILTER_FLAG_WAIT_KILLABLE_RECV` (Linux 5.19), so a sandbox starts in a reduced legacy read-only cancellation mode.
+Isolation is unchanged, but the broker fails closed with `EOPNOTSUPP` on the mediated operations that write results back into workload memory: `getpeername`, `accept` and `accept4` with a non-null peer-address argument, and `sendmmsg` per-message length write-backs.
+Outbound-oriented workloads run unchanged.
+A server workload that reads the peer address on accept needs a node kernel with the 5.19 feature, either Linux 5.19 or later or a distribution backport.
+The selected mode is reported as `seccomp_listener_mode` in the sandbox qualification output.
+====
+
+[IMPORTANT]
+====
+An OpenShell 0.0.x installation cannot be upgraded in place.
+If you are replacing an older release, clean up the old runtime and uninstall the existing package first, then install {openshell-version}.
+Sandboxes created with a 0.0.x release must be recreated: remove them before the upgrade and create them again afterward, because their persisted boundary and runtime descriptors are not compatible with the 0.1 release line.
+====

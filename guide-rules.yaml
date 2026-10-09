@@ -109,3 +109,12 @@ rules:
       - 'EPERM'
       - 'oc delete -k'
       - '^Check:'
+  - glob: "content/modules/ROOT/pages/admin/install-openshell.adoc"
+    require_order:
+      - '(?i)agent sandbox'
+      - 'helm install'
+      - 'openshell gateway add'
+      - 'openshell status'
+    require:
+      - '\{openshell-version\}'
+      - '^Check:'
