@@ -168,3 +168,8 @@ rules:
       - 'xref:user/connect\.adoc'
       - 'xref:user/first-chat\.adoc'
       - 'xref:user/whats-enabled\.adoc'
+  - glob: "content/modules/ROOT/pages/user/connect.adoc"
+    require:
+      - 'Gateway secret'
+      - '(?i)pair'
+      - '(?i)site data'

@@ -1,5 +1,111 @@
 = Connect and pair your browser
-:guide-no-sources:
 
-// STUB
-This page is not written yet.
+// Sources:
+// openclaw:docs/web/control-ui.md:11,184
+// openclaw:docs/web/control-ui/connect-and-pair.md:15,30,42,44,49,53-54
+// openclaw:ui/src/i18n/locales/en-login.ts:7-14,59-77,97-104,105-122
+// openclaw:ui/src/i18n/locales/en-settings.ts:329-330
+// starter-kits:agents/openclaw/deployment/docs/troubleshooting.md:299-335
+
+The Control UI is a web app that the gateway serves, so it opens right in your browser with nothing to install.
+Before you start, have the two things your administrator gave you ready: the web address of the Control UI and the gateway token.
+This page opens that address, signs you in with the token, and gets your browser approved so the chat is ready to use.
+
+== Open the address and sign in
+
+The login screen is headed *Connect to OpenClaw*.
+It has one field for your credential, labeled *Gateway secret*, with the placeholder *Paste the token or type the password*.
+The recipe uses a token, so this is where your gateway token goes.
+
+. Open the web address your administrator gave you in your browser.
++
+Check: the login screen appears, headed *Connect to OpenClaw*, with a *Gateway secret* field.
+
+. Paste the gateway token into *Gateway secret* and connect.
++
+Check: the screen moves on from the token prompt.
+If your browser is already known to the gateway, the chat interface opens.
+If it's new to the gateway, the screen asks you to get the browser approved, which the next section covers.
+
+== Get your browser approved
+
+After the token is accepted, a browser the gateway hasn't seen before needs a one-time approval before it reaches the chat.
+This is a security step, and it happens once per browser.
+
+How the approval happens depends on the address you opened.
+
+If the address is a local one on your own machine, such as `http://localhost:18789` that your administrator brought to your machine with a port-forward, the gateway approves your browser on its own and the chat opens.
+
+If the address reaches the gateway from outside the cluster, the login screen shows *Approve this browser* and reports `disconnected (1008): pairing required`.
+Your administrator approves the request for you.
+Keep the page open while you wait.
+It retries on its own and connects once the request is approved, and *Check now* lets you retry straight away.
+
+Once your browser is approved, the gateway remembers it, and you won't be asked to approve it again unless your administrator revokes it.
+
+Check: the chat interface opens in place of the login screen.
+
+== What the login screen is telling you
+
+If the connection doesn't go through, the login screen names the problem and what to do next.
+These are the messages you are most likely to meet.
+
+*This Gateway expects its token*::
+The gateway is reachable but hasn't had a matching token yet.
+Paste the gateway token your administrator gave you into *Gateway secret* and connect again.
+
+*Gateway secret rejected*::
+The gateway received a token but didn't accept it.
+Check that you pasted the token for this gateway, with no stray spaces, and ask your administrator to confirm it if it still fails.
+
+*Approve this browser*::
+Your token was accepted, but the gateway hasn't seen this browser before.
+This is the pairing step above: your administrator approves the request, and the page connects on its own.
+
+*Too many failed attempts*::
+The gateway is holding off authentication attempts from your browser for a while.
+The section on a browser that keeps being turned away, below, covers how to clear this.
+
+You may also reach the chat with *limited access*.
+When that happens, open *Inbox > System > Limited access* and click *Request admin*; on a phone, open the sidebar to reach the Inbox.
+Your administrator approves the upgrade, and your browser then has full access.
+
+== Your token stays in this tab
+
+After you connect, the Control UI keeps the token in the current browser tab for this gateway, so you don't paste it again every time you come back in that tab.
+The gateway reports this on the screen as the token being saved for this tab after connecting.
+Once your browser is paired, it uses a per-device token the gateway issued to it on later connections, rather than the shared token you first pasted.
+
+== When you have to pair again
+
+Each browser profile is a device of its own to the gateway, with its own identity.
+So you connect as a new browser, and pair again, whenever you:
+
+* clear site data for the address, which removes the saved token and the browser's device identity;
+* open the address in a different browser or a different browser profile;
+* use a private window, or a profile set to discard site data on exit, which drops the device identity each time it closes.
+
+To stay paired across restarts, use an ordinary, persistent browser profile rather than a private window.
+
+== A browser that keeps being turned away
+
+If your browser keeps failing to connect even with the right token, and you see *Too many failed attempts* or the message *Too many failed authentication attempts (retry later)*, the gateway has rate-limited your browser.
+This happens after a browser sends an out-of-date saved token several times, for example after the deployment's device pairings were reset.
+Once the limit kicks in, the gateway turns the browser away even after the underlying token is fixed.
+
+Clearing it takes one step on your side and one from your administrator.
+
+. Clear site data for the address in your browser.
+This removes the out-of-date saved token.
+In most browsers you reach it from the lock or site-info icon in the address bar, under the site's settings, or from the browser's developer tools under storage.
+
+. Ask your administrator to restart the deployment, which resets the gateway's in-memory rate limiter, and then to approve your browser when it connects again.
+
+. Reload the address.
++
+Check: a fresh approval request reaches your administrator, and the chat opens once it is approved.
+
+== Where to go next
+
+With your browser connected and paired, you're ready to talk to the agent.
+Continue with xref:user/first-chat.adoc[Hold your first conversation].
