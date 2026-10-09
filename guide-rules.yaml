@@ -184,3 +184,10 @@ rules:
       - '(?i)browser'
       - '(?i)channel'
       - 'xref:admin/change-config\.adoc'
+  - glob: "content/modules/ROOT/pages/reference/manifests.adoc"
+    require:
+      - 'openclaw-state'
+      - '/startupz'
+      - '/healthz'
+      - 'set-forwarded-headers'
+      - 'otel-collector'

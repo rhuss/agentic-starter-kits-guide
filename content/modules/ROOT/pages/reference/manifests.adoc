@@ -1,5 +1,485 @@
 = Manifest reference
-:guide-no-sources:
 
-// STUB
-This page is not written yet.
+// Sources:
+// starter-kits:agents/openclaw/deployment/manifests/kustomization.yaml:1-14
+// starter-kits:agents/openclaw/deployment/manifests/01-secret.yaml:1-11
+// starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:1-58
+// starter-kits:agents/openclaw/deployment/manifests/03-pvc.yaml:1-15
+// starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:1-140
+// starter-kits:agents/openclaw/deployment/manifests/05-service.yaml:1-15
+// starter-kits:agents/openclaw/deployment/manifests/06-route.yaml:1-21
+// starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/kustomization.yaml:1-24
+// starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/rbac.yaml:1-31
+// starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/configmap-patch.yaml:1-74
+// starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/deployment-patch.yaml:1-53
+// starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/otel-collector-config.yaml:1-67
+
+This page lists the fields of every manifest the recipe ships, by resource.
+The base overlay in `agents/openclaw/deployment/manifests/` is applied with `oc apply -k`, as described in xref:admin/deploy.adoc[Deploy OpenClaw].
+The tracing overlay in `agents/openclaw/deployment/overlays/mlflow-tracing/` layers the OpenTelemetry resources on top of the base, as described in xref:admin/tracing.adoc[Send traces to MLflow].
+For the OpenClaw gateway settings inside the ConfigMap, see xref:reference/configuration.adoc[Configuration reference].
+
+Values shown as `CHANGE-ME`, `not-needed`, `YOUR-MODEL-ID`, `YOUR-NAMESPACE`, `YOUR-EXPERIMENT-ID`, and `YOUR-MLFLOW-INTEGRATION-CLUSTERROLE` are placeholders in the shipped files that you replace before you apply them.
+
+== Base manifests
+
+The base `kustomization.yaml` lists the six resources and adds two common labels to all of them.
+
+.Kustomization (`kustomization.yaml`)
+[cols="1,3"]
+|===
+| Field | Value
+
+| apiVersion
+| kustomize.config.k8s.io/v1beta1
+
+| resources
+| 01-secret.yaml, 02-configmap.yaml, 03-pvc.yaml, 04-deployment.yaml, 05-service.yaml, 06-route.yaml
+
+| commonLabels
+| app.kubernetes.io/name: openclaw, app.kubernetes.io/part-of: openclaw-on-openshift
+|===
+
+=== Secret
+
+The Secret `openclaw-secrets` is of type `Opaque` and carries the label `app: openclaw`.
+Its `stringData` holds two placeholder values that you replace with your own.
+
+.Secret `openclaw-secrets` (`01-secret.yaml`)
+[cols="1,2",options="header"]
+|===
+| Key | Shipped value
+
+| OPENCLAW_GATEWAY_TOKEN
+| CHANGE-ME
+
+| VLLM_API_KEY
+| not-needed
+|===
+
+=== ConfigMap
+
+The ConfigMap `openclaw-config` carries the label `app: openclaw` and holds one data key, `openclaw.json`, with the gateway configuration.
+
+.ConfigMap `openclaw-config`, key `openclaw.json` (`02-configmap.yaml`)
+[cols="2,2",options="header"]
+|===
+| JSON path | Shipped value
+
+| gateway.port
+| 18789
+
+| gateway.bind
+| lan
+
+| gateway.mode
+| local
+
+| gateway.auth.mode
+| token
+
+| agents.defaults.model
+| vllm/YOUR-MODEL-ID
+
+| agents.defaults.sandbox.mode
+| off
+
+| models.mode
+| replace
+
+| models.providers.vllm.baseUrl
+| https://YOUR-VLLM-OR-OGX-ENDPOINT/v1
+
+| models.providers.vllm.api
+| openai-completions
+
+| models.providers.vllm.apiKey
+| not-needed
+
+| models.providers.vllm.models[0].id / .name
+| YOUR-MODEL-ID
+
+| models.providers.vllm.models[0].reasoning
+| false
+
+| models.providers.vllm.models[0].contextWindow
+| 32768
+
+| models.providers.vllm.models[0].maxTokens
+| 4096
+
+| tools.deny
+| group:web, browser
+|===
+
+=== PersistentVolumeClaim
+
+The PersistentVolumeClaim `openclaw-state` carries the label `app: openclaw` and holds the gateway state.
+
+.PersistentVolumeClaim `openclaw-state` (`03-pvc.yaml`)
+[cols="1,2",options="header"]
+|===
+| Field | Value
+
+| accessModes
+| ReadWriteOnce
+
+| storageClassName
+| gp3-csi
+
+| resources.requests.storage
+| 5Gi
+|===
+
+[NOTE]
+====
+The shipped `storageClassName` is `gp3-csi`.
+The file's comment says to change it to your cluster's block storage class and to avoid NFS, because OpenClaw uses SQLite, which requires POSIX file locking.
+====
+
+=== Deployment
+
+The Deployment `openclaw` runs a single replica with the `Recreate` strategy and the pod selector `app: openclaw`.
+Its pod `securityContext` sets `runAsNonRoot: true`.
+The pod runs one init container, `init-config`, then the `gateway` container.
+
+Both containers run the same image, pinned by digest.
+
+.Deployment images (`04-deployment.yaml`)
+[cols="1,3",options="header"]
+|===
+| Container | Image
+
+| init-config (init container)
+| ghcr.io/openclaw/openclaw@sha256:d0ded1dd76939b2bf4d67ef2d13247b8b160aa5666331d4a0b0e58811182cbb8
+
+| gateway
+| ghcr.io/openclaw/openclaw@sha256:d0ded1dd76939b2bf4d67ef2d13247b8b160aa5666331d4a0b0e58811182cbb8
+|===
+
+[WARNING]
+====
+The manifest comment marks this image as an upstream community image, not built or validated by Red Hat.
+====
+
+The `gateway` container passes its command through `args`, not `command`, so the image entrypoint runs its state migrations before the gateway starts.
+
+.`gateway` container command and port (`04-deployment.yaml`)
+[cols="1,3",options="header"]
+|===
+| Field | Value
+
+| args
+| node, /app/dist/index.js, gateway, run
+
+| ports.containerPort
+| 18789 (TCP)
+|===
+
+.`gateway` container environment (`04-deployment.yaml`)
+[cols="2,3",options="header"]
+|===
+| Name | Value
+
+| HOME
+| /home/node
+
+| OPENCLAW_CONFIG_DIR
+| /home/node/.openclaw
+
+| NODE_ENV
+| production
+
+| OPENCLAW_GATEWAY_TOKEN
+| secretKeyRef openclaw-secrets / OPENCLAW_GATEWAY_TOKEN
+
+| VLLM_API_KEY
+| secretKeyRef openclaw-secrets / VLLM_API_KEY
+|===
+
+The three probes all use `httpGet` on port 18789.
+The startup budget of 30 failures at 10 seconds covers the migration pass after an image upgrade.
+
+.`gateway` container probes (`04-deployment.yaml`)
+[cols="1,1,1,1,1",options="header"]
+|===
+| Probe | Path | periodSeconds | timeoutSeconds | failureThreshold
+
+| startupProbe
+| /startupz
+| 10
+| 5
+| 30
+
+| livenessProbe
+| /healthz
+| 30
+| 10
+| (not set)
+
+| readinessProbe
+| /startupz
+| 10
+| 5
+| (not set)
+|===
+
+.Container resources (`04-deployment.yaml`)
+[cols="1,2,2",options="header"]
+|===
+| Container | Requests | Limits
+
+| gateway
+| memory 512Mi, cpu 250m
+| memory 2Gi, cpu 1
+
+| init-config
+| (none)
+| memory 128Mi, cpu 100m
+|===
+
+Both containers set the same `securityContext`: `allowPrivilegeEscalation: false` and `capabilities.drop: [ALL]`.
+
+.Volume mounts and volumes (`04-deployment.yaml`)
+[cols="1,2,2",options="header"]
+|===
+| Volume | Mount path | Source
+
+| config
+| /config (init-config only)
+| configMap openclaw-config
+
+| data
+| /home/node (both containers)
+| persistentVolumeClaim openclaw-state
+|===
+
+=== Service
+
+The Service `openclaw` is of type `ClusterIP`, carries the label `app: openclaw`, and selects pods with `app: openclaw`.
+
+.Service `openclaw` (`05-service.yaml`)
+[cols="1,2",options="header"]
+|===
+| Field | Value
+
+| ports[0].name
+| gateway
+
+| ports[0].port
+| 18789
+
+| ports[0].targetPort
+| 18789
+
+| ports[0].protocol
+| TCP
+|===
+
+=== Route
+
+The Route `openclaw` carries the label `app: openclaw` and forwards to the Service `openclaw` with weight 100 on the named port `gateway`.
+Its TLS block sets `termination: edge` and `insecureEdgeTerminationPolicy: Redirect`.
+
+.Route annotations (`06-route.yaml`)
+[cols="2,1",options="header"]
+|===
+| Annotation | Value
+
+| haproxy.router.openshift.io/timeout
+| 30m
+
+| haproxy.router.openshift.io/set-forwarded-headers
+| never
+|===
+
+[NOTE]
+====
+The manifest comment explains `set-forwarded-headers: never`: OpenClaw answers requests that carry forwarded headers from a proxy outside `gateway.trustedProxies` with HTTP 403 (`proxy_attribution_required`).
+====
+
+== MLflow tracing overlay
+
+The overlay in `overlays/mlflow-tracing/` includes the base manifests, adds the RBAC and collector-config resources, sets a namespace, and patches the ConfigMap and the Deployment.
+
+.Overlay kustomization (`kustomization.yaml`)
+[cols="1,3"]
+|===
+| Field | Value
+
+| resources
+| ../../manifests, rbac.yaml, otel-collector-config.yaml
+
+| namespace
+| YOUR-NAMESPACE
+
+| patches
+| ConfigMap openclaw-config from configmap-patch.yaml; Deployment openclaw from deployment-patch.yaml
+|===
+
+=== RBAC
+
+The `rbac.yaml` file creates a ServiceAccount for the pod and a RoleBinding to the operator-provided MLflow ClusterRole.
+
+.RBAC resources (`rbac.yaml`)
+[cols="1,1,2",options="header"]
+|===
+| Kind | Name | Key fields
+
+| ServiceAccount
+| openclaw-tracing
+| label app: openclaw
+
+| RoleBinding
+| openclaw-tracing-mlflow
+| roleRef ClusterRole YOUR-MLFLOW-INTEGRATION-CLUSTERROLE; subject ServiceAccount openclaw-tracing
+|===
+
+=== ConfigMap patch
+
+The `configmap-patch.yaml` replaces the whole `openclaw.json` from the base ConfigMap.
+It keeps the base gateway, agents, models, and tools settings and changes or adds the fields below.
+
+.ConfigMap patch, changes to `openclaw.json` (`configmap-patch.yaml`)
+[cols="2,2",options="header"]
+|===
+| JSON path | Value
+
+| gateway.controlUi.enabled
+| true
+
+| models.providers.vllm.apiKey
+| $\{VLLM_API_KEY}
+
+| plugins.allow
+| diagnostics-otel
+
+| plugins.entries.diagnostics-otel.enabled
+| true
+
+| diagnostics.enabled
+| true
+
+| diagnostics.otel.enabled
+| true
+
+| diagnostics.otel.endpoint
+| http://localhost:4318
+
+| diagnostics.otel.traces
+| true
+
+| diagnostics.otel.metrics
+| true
+
+| diagnostics.otel.logs
+| false
+|===
+
+=== Deployment patch
+
+The `deployment-patch.yaml` sets `serviceAccountName: openclaw-tracing`, adds environment variables to the `gateway` container, and adds the `otel-collector` sidecar and its volume.
+
+.Deployment patch, `gateway` container environment (`deployment-patch.yaml`)
+[cols="2,3",options="header"]
+|===
+| Name | Value
+
+| OTEL_EXPORTER_OTLP_ENDPOINT
+| http://localhost:4318
+
+| OTEL_EXPORTER_OTLP_PROTOCOL
+| http/protobuf
+
+| VLLM_API_KEY
+| secretKeyRef openclaw-secrets / VLLM_API_KEY
+|===
+
+.Deployment patch, `otel-collector` sidecar (`deployment-patch.yaml`)
+[cols="1,3",options="header"]
+|===
+| Field | Value
+
+| image
+| ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib@sha256:85ac41c2db88d0df9bd6145e608a3cb023f5d8443868adbfbbf66efb51087917 (comment: 0.120.0)
+
+| args
+| --config=/etc/otel/config.yaml
+
+| ports
+| 4317 (otlp-grpc), 4318 (otlp-http)
+
+| volumeMounts
+| otel-config to /etc/otel
+
+| resources.requests
+| cpu 100m, memory 128Mi
+
+| resources.limits
+| cpu 200m, memory 384Mi
+
+| securityContext
+| allowPrivilegeEscalation false, runAsNonRoot true, seccompProfile RuntimeDefault, capabilities drop ALL
+|===
+
+The patch also adds the `otel-config` volume, a configMap `otel-collector-config` with the item key `config.yaml` mapped to path `config.yaml`.
+
+=== OTel collector ConfigMap
+
+The `otel-collector-config.yaml` file creates the ConfigMap `otel-collector-config` (label `app: openclaw`) with one data key, `config.yaml`, the collector pipeline.
+
+.Collector `config.yaml`, key fields (`otel-collector-config.yaml`)
+[cols="2,3",options="header"]
+|===
+| Path | Value
+
+| extensions.bearertokenauth.filename
+| /var/run/secrets/kubernetes.io/serviceaccount/token
+
+| receivers.otlp.protocols.grpc.endpoint
+| 127.0.0.1:4317
+
+| receivers.otlp.protocols.http.endpoint
+| 127.0.0.1:4318
+
+| processors.memory_limiter
+| check_interval 1s, limit_mib 256, spike_limit_mib 64
+
+| processors.resource.attributes
+| service.namespace: YOUR-NAMESPACE; deployment.environment: prototype
+
+| processors.batch
+| timeout 5s, send_batch_size 100
+
+| exporters.otlphttp.endpoint
+| https://mlflow.redhat-ods-applications.svc.cluster.local:8443
+
+| exporters.otlphttp.compression
+| none
+
+| exporters.otlphttp.tls.ca_file
+| /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+
+| exporters.otlphttp.headers
+| X-MLFLOW-WORKSPACE: YOUR-NAMESPACE; x-mlflow-experiment-id: YOUR-EXPERIMENT-ID
+
+| exporters.otlphttp.auth.authenticator
+| bearertokenauth
+
+| service.extensions
+| bearertokenauth
+
+| service.pipelines.traces.receivers
+| otlp
+
+| service.pipelines.traces.processors
+| memory_limiter, resource, batch
+
+| service.pipelines.traces.exporters
+| otlphttp, debug
+|===
+
+[NOTE]
+====
+The file's comment explains `compression: none`: MLflow's `/v1/traces` rejects gzip-compressed requests, and gzip is the exporter's default.
+====
