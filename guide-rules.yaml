@@ -99,3 +99,13 @@ rules:
       - '^Check:'
     forbid:
       - 'SIGUSR1'
+  - glob: "content/modules/ROOT/pages/admin/maintain.adoc"
+    require_order:
+      - 'tar czf'
+      - 'oc apply -k'
+      - '\[gateway\] ready'
+    require:
+      - '-C /home/node/\.openclaw \.'
+      - 'EPERM'
+      - 'oc delete -k'
+      - '^Check:'

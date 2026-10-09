@@ -1,5 +1,132 @@
 = Back up, upgrade, and remove
-:guide-no-sources:
 
-// STUB
-This page is not written yet.
+// Sources:
+// starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:217-241
+// starter-kits:agents/openclaw/deployment/docs/troubleshooting.md:264-278
+// starter-kits:agents/openclaw/deployment/docs/installer-deployment.md:438,442
+// starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:31-40,69-76,97-99,108-116,134-140
+// starter-kits:agents/openclaw/deployment/manifests/kustomization.yaml:4-10
+// openclaw:docs/install/docker.md:230-234,247-249,251-258
+// openclaw:docs/install/updating.md:16-18
+// openclaw:src/infra/state-migrations.messages.ts:158
+
+Once OpenClaw runs, three operations keep it healthy over time: a backup of its state, an upgrade to a new image, and a clean removal.
+All three act on the PersistentVolumeClaim (PVC) `openclaw-state`, which holds the gateway's configuration, its SQLite databases, and its logs.
+The backup copies that state out of the Pod, the upgrade migrates it to the new OpenClaw version, and the removal deletes it.
+
+The commands use the project `my-openclaw`, as xref:admin/deploy.adoc[Deploy OpenClaw] does.
+Change the namespace in every command if you deployed into another project.
+
+== Back up the state
+
+OpenClaw keeps everything it owns under `~/.openclaw` on the PVC.
+A backup is a `tar` archive of that directory, streamed out of the gateway container to a file on your machine.
+Take it before an upgrade, and take it while no agent run is active, so that the SQLite databases are not written during the copy.
+
+. Stream the state directory into a local archive.
++
+Check: `tar` writes `openclaw-backup.tgz` and the archive lists the `.openclaw` directory.
++
+[source,bash]
+----
+oc exec deployment/openclaw -c gateway -n my-openclaw -- \
+  tar czf - -C /home/node .openclaw > openclaw-backup.tgz
+tar tzf openclaw-backup.tgz | head
+----
+// expect: contains ".openclaw"
+
+With manifests older than the OpenClaw 2026.9 update, the state lived at the root of the PVC rather than under `~/.openclaw`.
+To back up such a deployment, change the directory the archive is taken from to `-C /home/node/.openclaw .` instead.
+
+[NOTE]
+====
+This archive is a full copy of the state directory at a quiet moment.
+The copies OpenClaw makes on its own, the automatic configuration backups and the migration recovery originals, are not a full-state backup.
+====
+
+== Upgrade to a new image
+
+An upgrade replaces the OpenClaw image with a newer one and lets OpenClaw bring the existing state forward.
+The recipe pins the image by digest in `manifests/04-deployment.yaml`, so a new version arrives as an edit to that digest in the manifests you apply.
+Because the state carries across the restart, back it up first with the step above.
+
+Apply the updated manifests the same way you deployed them:
+
+[source,bash]
+----
+oc apply -k manifests/ -n my-openclaw
+----
+
+Two things happen on the first start after the upgrade, before the gateway serves traffic:
+
+* The init container `init-config` moves any state that earlier versions of these manifests kept at the root of the PVC into `~/.openclaw`, once.
+It skips `lost+found` and leaves an existing `~/.openclaw` untouched, so the move runs only on a deployment that still has the old layout.
+* The gateway container starts through `args`, not `command`, so the image entrypoint runs first.
+The entrypoint runs `openclaw doctor --fix`, which migrates the state to the new OpenClaw version.
+Before it advances the SQLite databases, doctor saves a verified copy of each one beside the original.
+The gateway's startup probe allows 5 minutes (30 checks, 10 seconds apart) for this pass.
+
+xref:overview/architecture.adoc#inside-the-pod[Inside the Pod] describes the init container, the entrypoint, and the probes in more detail.
+
+[IMPORTANT]
+====
+The doctor migration runs only because the gateway starts through `args` and keeps the image entrypoint.
+A manifest that replaces the entrypoint with its own `command` bypasses the migration, and the new image then starts against unmigrated state.
+The recipe's manifests keep the entrypoint; this matters only if you customize how the gateway starts.
+====
+
+. After the Pod reports `1/1 Running` again, read the gateway log for the migration and readiness lines.
+A deployment that had legacy state to migrate logs `Auto-migrated legacy state`; every start logs `[gateway] ready` once the gateway serves.
++
+Check: the log ends with `[gateway] ready`.
++
+[source,bash]
+----
+oc logs deployment/openclaw -c gateway -n my-openclaw | grep -E "migrated|ready"
+----
+// expect: contains "[gateway] ready"
+
+=== If the gateway fails with "EPERM: operation not permitted, fchmod"
+
+OpenClaw 2026.9 tightens the permissions of `~/.openclaw` when it starts, migrates state, or writes its configuration, and it needs a writable `~/.cache`.
+Manifests older than the OpenClaw 2026.9 update mounted the PVC directly at `/home/node/.openclaw`.
+The state directory was then the volume's mount point, which belongs to root, so OpenShift's arbitrary UID could not change its permissions, and the gateway failed with an error like this:
+
+[source,text]
+----
+Doctor could not complete maintenance. Check the reported service state and resolve the failure.
+EPERM: operation not permitted, fchmod
+----
+
+The fix is the upgrade itself: the current manifests mount the PVC at `/home/node`, and the init container moves the existing state into `~/.openclaw`, where OpenClaw owns it.
+xref:reference/troubleshooting.adoc[Troubleshooting] records the full entry with its symptoms.
+
+== Remove the deployment
+
+Removal deletes the objects that `oc apply -k` created, listed in `manifests/kustomization.yaml`: the Secret, the ConfigMap, the PVC, the Deployment, the Service, and the Route.
+Deleting the PVC `openclaw-state` is the irreversible part, so back up the state first if you want to keep it.
+
+[CAUTION]
+====
+Deleting the PVC removes all agent sessions, the SQLite state, and the logs.
+There is no undo once the volume is released.
+Take the backup above before you delete, and if you want the volume to survive deletion, give the PVC a `Retain` reclaim policy before you remove the deployment.
+====
+
+. Delete the objects created from the base manifests.
++
+Check: the `openclaw` Deployment no longer exists in the project.
++
+[source,bash]
+----
+oc delete -k manifests/ -n my-openclaw
+----
+// expect: not-contains "openclaw"
+
+If you deployed with an overlay, delete the overlay instead, for example `oc delete -k overlays/my-env`.
+The overlay sets the namespace rather than creating it, so the project `my-openclaw` stays after the delete.
+
+== Restore
+
+No source in this guide's baseline documents how to restore the `~/.openclaw` state from the backup archive, so this guide does not describe a restore procedure.
+Keep the archive from the backup step and the per-database copies that doctor writes during an upgrade; a rollback needs the state that matches the old image.
