@@ -81,3 +81,11 @@ rules:
       - 'devices approve <request-id>'
       - 'trustedProxies'
       - '^Check:'
+  - glob: "content/modules/ROOT/pages/admin/change-config.adoc"
+    require:
+      - 'image::config-state-lifecycle\.svg\['
+      - 'config patch --stdin'
+      - '--dry-run'
+      - 'oc rollout restart'
+      - 'config get'
+      - '^Check:'

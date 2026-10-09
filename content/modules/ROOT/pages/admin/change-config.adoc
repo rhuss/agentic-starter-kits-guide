@@ -1,5 +1,367 @@
 = Change the configuration of a running gateway
-:guide-no-sources:
 
-// STUB
-This page is not written yet.
+// Sources:
+// starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:59,203-213
+// starter-kits:agents/openclaw/deployment/docs/mlflow-tracing.md:198-205
+// starter-kits:agents/openclaw/deployment/docs/troubleshooting.md:127-129
+// starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:4,12-21,25,31-47
+// starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:21-28,42-55,81-82,97-99,134-140
+// starter-kits:agents/openclaw/deployment/overlays/example/kustomization.yaml:12-16
+// openclaw:docs/cli/config.md:79-81,117-129,172,221-223,384-393,441-447,566,573-587,592-594
+// openclaw:docs/gateway/configuration.md:106-117
+// openclaw:docs/gateway/configuration/hot-reload.md:13-15,42,60-65,89-92,117-120,143
+// openclaw:src/cli/config-cli.ts:127-134,430-451
+// openclaw:src/cli/config-cli-input.ts:520-588
+// openclaw:src/cli/config-cli-path.ts:362-366,480-519
+// openclaw:src/cli/config-cli-runner.ts:237-262,433-442,560-574
+// openclaw:src/cli/config-set-dryrun.ts:69-72
+// openclaw:src/gateway/config-reload-plan.ts:205-215
+// openclaw:src/config/io.write.ts:426-445
+// openclaw:src/config/io.write-safety.ts:563-573
+// openclaw:src/config/paths.ts:219-230
+// openclaw:src/config/gateway-control-ui-origins.ts:7-16
+// openclaw:src/gateway/server-runtime-config.ts:69-70,111-122
+// openclaw:src/gateway/server-startup-finish.ts:414-427,501-503
+// openclaw:src/gateway/startup-control-ui-origins.ts:10-31
+
+You wrote the gateway's configuration into the ConfigMap `openclaw-config`, but the running gateway doesn't read it from there.
+On the first start, the init container copies `openclaw.json` from the ConfigMap to the PersistentVolumeClaim (PVC) `openclaw-state`.
+From then on, OpenClaw owns that copy and keeps its runtime changes in it.
+To change the configuration of a running gateway, you pipe a patch into the OpenClaw CLI in the gateway container with `config patch --stdin`.
+
+This page first explains how a patch merges, which changes need a restart, and what OpenClaw refuses to write.
+Then it walks through two changes, a new model endpoint and a new model, and shows how to restart the gateway and keep the ConfigMap in sync.
+The commands use the project `my-openclaw`, as xref:admin/deploy.adoc[Deploy OpenClaw] does.
+
+== Where the configuration lives
+
+The diagram follows `openclaw.json` through the life of a deployment, in three lanes from left to right.
+
+image::config-state-lifecycle.svg["Lifecycle of openclaw.json in three lanes. First start: oc apply -k creates the ConfigMap openclaw-config, and the init container init-config mounts it at /config and copies openclaw.json to ~/.openclaw/openclaw.json on the PVC openclaw-state only if it is missing. Running: the administrator pipes a JSON patch into config patch --stdin through oc exec, the validated patch writes the copy on the PVC, edits to the ConfigMap do not reach the running gateway, and write safety blocks accidental clobbers and saves the payload as openclaw.json.rejected.*. Upgrade: back up the state, apply the new manifests, the init container moves old root-level state into ~/.openclaw once, doctor --fix migrates the state, and the gateway becomes ready within the startup budget",role=expand]
+
+In the first lane, `oc apply -k` creates the ConfigMap, and the init container `init-config` mounts it at `/config`.
+The init container copies `openclaw.json` to `~/.openclaw/openclaw.json` on the PVC only if that file is missing.
+On every later start, it finds the copy, logs `Config exists, keeping it`, and leaves the copy alone.
+The gateway container mounts only the PVC, not the ConfigMap, so edits to the ConfigMap never reach a running gateway.
+xref:overview/architecture.adoc[How the deployment fits together] describes the init container in more detail.
+
+In the second lane, the gateway runs, and `config patch` changes the copy on the PVC.
+The ConfigMap matters for one case only: a new, empty PVC starts from it.
+That's why you keep it in sync with the changes you patch in, as <<sync-configmap>> shows.
+
+xref:admin/maintain.adoc[Back up, upgrade, and remove] covers the third lane, the upgrade.
+
+== How a patch changes the configuration
+
+`config patch` takes a configuration-shaped JSON5 object and applies it to `openclaw.json`.
+With `--stdin`, it reads the patch from standard input, which is why the commands on this page pipe the patch into `oc exec -i`.
+A patch on standard input may be up to 1 MiB in size, and a patch file passed with `--file` up to 8 MiB.
+
+Three rules decide what a patch does:
+
+* Objects merge recursively.
+A patch names only the keys it changes, and every other key keeps its value.
+* Arrays and scalar values replace the value at their path.
+A patch of `gateway.controlUi.allowedOrigins`, as in xref:admin/access.adoc[Open the Control UI], replaces the whole list.
+* `null` deletes the key at its path.
+
+The second rule has an exception.
+OpenClaw protects paths that commonly hold entries you added, among them the model list of a provider, `models.providers.<id>.models`.
+When a patch's list drops a model ID that the configuration holds, OpenClaw refuses the patch with `Refusing to replace models.providers.vllm.models; it would remove existing entries` and writes nothing.
+The message suggests `--merge` or `--replace`, but those are options of `config set`, and `config patch` doesn't accept them.
+With `config patch`, you name the path with `--replace-path <path>`, which makes that one object or array exactly the value in the patch.
+<<replace-model>> uses it.
+
+=== Preview with a dry run
+
+`--dry-run` checks the patched configuration against the schema and checks that its secret references resolve, without writing `openclaw.json`.
+A successful dry run prints `Dry run successful` with the number of updates it validated.
+When a patch changes the model and OpenClaw can't resolve the new model reference, the dry run fails with `model reference validation failed`.
+The tasks on this page run every patch with `--dry-run` first and apply it only after the preview succeeds.
+
+=== Restart hints
+
+After every successful patch, the CLI prints `Applied <n> config update(s).` followed by one of three hints:
+
+[cols="2,3",options="header"]
+|===
+|Hint
+|Meaning
+
+|`Restart the gateway to apply.`
+|The changed path needs a full restart, or passive reload is disabled.
+
+|`Change will apply without restarting the gateway.`
+|Hot reload picks the change up automatically.
+
+|`No gateway restart needed.`
+|Nothing runtime-relevant changed.
+|===
+
+The CLI derives the hint from the paths you changed.
+It describes the expected application and isn't a receipt from the running gateway.
+
+The recipe's configuration doesn't set `gateway.reload`, so the gateway runs in the default reload mode `hybrid`.
+In this mode, the gateway applies hot-reloadable changes and restarts by itself when a change requires it.
+Changes under `agents` and `models` apply without a restart.
+Settings such as `gateway.port`, `gateway.bind`, and the authentication mode need one.
+<<restart>> shows how to restart the gateway yourself.
+
+== What OpenClaw refuses to write
+
+OpenClaw validates the whole configuration as it would look after the patch, before it writes anything to the PVC.
+Two of its checks protect the file itself:
+
+* OpenClaw refuses a patch that makes the configuration invalid against the schema.
+The CLI names the affected setting, confirms that no settings were saved, and exits with status 1.
+* OpenClaw blocks a write that looks like an accidental clobber: one that drops `gateway.mode` or shrinks the file by more than half.
+OpenClaw leaves the active `openclaw.json` alone and saves the rejected payload next to it as `openclaw.json.rejected.<timestamp>` for inspection.
+
+In the recipe, the active file is `/home/node/.openclaw/openclaw.json`, because the Deployment sets `HOME` to `/home/node`.
+To look for rejected payloads, list them in the gateway container:
+
+[source,bash]
+----
+oc exec deployment/openclaw -c gateway -n my-openclaw -- sh -c 'ls -lt /home/node/.openclaw/openclaw.json.rejected.*'
+----
+
+When no write was ever blocked, `ls` reports that no such file exists.
+
+The gateway also keeps a last-known-good copy of the configuration after each successful start.
+Neither a start nor a hot reload restores that copy by itself; only `openclaw doctor --fix` does.
+When a hot reload meets an invalid configuration, the gateway skips it and keeps running with the last configuration it accepted.
+
+== Read the configuration
+
+`config get <path>` prints one value from `openclaw.json`, with secrets redacted.
+It takes exactly one path, in dot or bracket notation.
+Strings, numbers, and booleans print bare, and objects and arrays print as formatted JSON.
+For a key that the file doesn't set, `config get` says that the runtime default applies.
+
+The command reads the file on the PVC, not the state of the running gateway.
+It shows what you patched in.
+Values that the gateway only holds in memory don't show up, such as the loopback origins it adds for the port-forward at startup.
+
+Check: the `gateway` object shows the recipe's port 18789.
+
+[source,bash]
+----
+oc exec deployment/openclaw -c gateway -n my-openclaw -- node /app/dist/index.js config get gateway
+----
+// expect: contains "18789"
+
+== Point the gateway at a new model endpoint
+
+When your model endpoint moves, the gateway needs the new address in `models.providers.vllm.baseUrl`.
+Objects merge, so the patch names only `baseUrl`.
+The model list, the API type, and the API key setting of the provider keep their values.
+
+. Read the current endpoint.
++
+Check: the output is the endpoint URL from your configuration, ending in `/v1`.
++
+[source,bash]
+----
+oc exec deployment/openclaw -c gateway -n my-openclaw -- node /app/dist/index.js config get models.providers.vllm.baseUrl
+----
+// expect: contains "/v1"
+
+. Preview the patch.
+Replace `<new-endpoint>` with the host name of the new endpoint.
++
+Check: the output reports `Dry run successful`.
++
+[source,bash]
+----
+echo '{"models": {"providers": {"vllm": {"baseUrl": "https://<new-endpoint>/v1"}}}}' | \
+  oc exec -i deployment/openclaw -c gateway -n my-openclaw -- \
+  node /app/dist/index.js config patch --stdin --dry-run
+----
+// expect: contains "Dry run successful"
+
+. Apply the patch.
++
+Check: the output reports the applied update and that the change applies without a restart.
++
+[source,bash]
+----
+echo '{"models": {"providers": {"vllm": {"baseUrl": "https://<new-endpoint>/v1"}}}}' | \
+  oc exec -i deployment/openclaw -c gateway -n my-openclaw -- \
+  node /app/dist/index.js config patch --stdin
+----
+// expect: contains "Applied" and contains "Change will apply without restarting the gateway."
+
+. Read the endpoint again.
++
+Check: the output is the new endpoint URL.
++
+[source,bash]
+----
+oc exec deployment/openclaw -c gateway -n my-openclaw -- node /app/dist/index.js config get models.providers.vllm.baseUrl
+----
+// expect: contains "/v1"
+
+Make the same change in the ConfigMap, as <<sync-configmap>> shows.
+
+[#replace-model]
+== Switch the gateway to another model
+
+A model change touches two places in the configuration.
+`agents.defaults.model` names the model that the agents use, and the provider's model list `models.providers.vllm.models` describes it.
+When the new model replaces the old one in the list, the patch drops the old model ID.
+That's the case the protected path refuses, so this patch needs `--replace-path`.
+
+Run the commands from a directory where you can write the patch file.
+
+. Write the patch to the file `model-patch.json`.
+Take `<model-id>` from the `/v1/models` response of your endpoint, and put `vllm/` before it in `agents.defaults.model`, as xref:admin/configure-model.adoc[Configure the model endpoint and secrets] explains.
+The other values come from the recipe's ConfigMap; adjust them to your model.
++
+[source,json]
+----
+{
+  "agents": {
+    "defaults": {
+      "model": "vllm/<model-id>"
+    }
+  },
+  "models": {
+    "providers": {
+      "vllm": {
+        "models": [
+          {
+            "id": "<model-id>",
+            "name": "<model-id>",
+            "reasoning": false,
+            "input": ["text"],
+            "contextWindow": 32768,
+            "maxTokens": 4096
+          }
+        ]
+      }
+    }
+  }
+}
+----
+
+. Preview the patch.
+Without `--replace-path`, a new model ID makes this step fail with `Refusing to replace models.providers.vllm.models`.
++
+Check: the output reports `Dry run successful`.
++
+[source,bash]
+----
+oc exec -i deployment/openclaw -c gateway -n my-openclaw -- \
+  node /app/dist/index.js config patch --stdin --dry-run \
+  --replace-path models.providers.vllm.models < model-patch.json
+----
+// expect: contains "Dry run successful"
+
+. Apply the patch.
++
+Check: the output reports the applied updates and that the change applies without a restart.
++
+[source,bash]
+----
+oc exec -i deployment/openclaw -c gateway -n my-openclaw -- \
+  node /app/dist/index.js config patch --stdin \
+  --replace-path models.providers.vllm.models < model-patch.json
+----
+// expect: contains "Applied" and contains "Change will apply without restarting the gateway."
+
+. Read the model reference.
++
+Check: the output is `vllm/` followed by the new model ID.
++
+[source,bash]
+----
+oc exec deployment/openclaw -c gateway -n my-openclaw -- node /app/dist/index.js config get agents.defaults.model
+----
+// expect: contains "vllm/"
+
+Make the same change in the ConfigMap, as <<sync-configmap>> shows.
+
+[#restart]
+== Restart the gateway
+
+In the default reload mode, the gateway restarts by itself when a change needs it.
+When you want to restart it yourself, restart the Deployment.
+The recipe does the same after it patches the tracing configuration into a running gateway.
+The new Pod's init container finds `openclaw.json` on the PVC and keeps it, so the restart keeps every change you patched in.
+
+[WARNING]
+====
+Removing `gateway.controlUi.allowedOrigins` with `null` changes `openclaw.json`, but the running gateway keeps the old origins until it restarts.
+The gateway checks a reload against the same security rules as its start.
+With the recipe's `lan` bind, those rules require an allowed origin for the Control UI, or a `gateway.publicOrigin`.
+At a start, the gateway first adds the loopback origins of the port-forward when the key is missing, but a reload doesn't.
+Restart the gateway after such a removal; until then, the old origins still apply.
+====
+
+. Restart the Deployment.
++
+Check: the command succeeds.
++
+[source,bash]
+----
+oc rollout restart deployment/openclaw -n my-openclaw
+----
+// expect: exit 0
+
+. Look at the Pod status.
+Repeat the command until the new Pod shows `Running`.
++
+Check: the `openclaw` Pod shows `Running`.
++
+[source,bash]
+----
+oc get pods -n my-openclaw
+----
+// expect: contains "Running"
+
+. Read the init container's log.
++
+Check: the log shows `Config exists, keeping it`.
++
+[source,bash]
+----
+oc logs deployment/openclaw -c init-config -n my-openclaw
+----
+// expect: contains "Config exists, keeping it"
+
+[#sync-configmap]
+== Keep the ConfigMap in sync
+
+The ConfigMap no longer affects the running gateway, but a new, empty PVC starts from it.
+Make every change that you patch in on the ConfigMap as well, so that a new PVC starts with the same configuration.
+Applying the changed ConfigMap leaves the running gateway as it is, because only the init container reads the ConfigMap.
+The init container copies `openclaw.json` only to a PVC that doesn't hold one yet.
+
+Run the commands from `agents/openclaw/deployment/` in your checkout of the Agentic Starter Kits repository.
+
+. Make the same change in the `openclaw.json` of the ConfigMap.
+With the base manifests, that's `manifests/02-configmap.yaml`.
+With an overlay, it's the overlay's `configmap-patch.yaml`, for example `overlays/my-env/configmap-patch.yaml`.
+
+. Apply the manifests the way you deployed them.
+For an overlay, run `oc apply -k overlays/my-env` instead.
++
+Check: the command succeeds and names the ConfigMap `openclaw-config`.
++
+[source,bash]
+----
+oc apply -k manifests/ -n my-openclaw
+----
+// expect: exit 0 and contains "openclaw-config"
+
+. Read the endpoint from the ConfigMap.
++
+Check: after the endpoint change above, the `baseUrl` line shows the new endpoint.
++
+[source,bash]
+----
+oc get configmap openclaw-config -n my-openclaw -o jsonpath='{.data.openclaw\.json}' | grep baseUrl
+----
+// expect: contains "baseUrl"
+
+xref:admin/tracing.adoc[Send traces to MLflow] applies a larger configuration change to a running gateway with the same `config patch` mechanism.
