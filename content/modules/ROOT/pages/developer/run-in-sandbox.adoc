@@ -1,5 +1,142 @@
 = Run OpenClaw in an OpenShell sandbox
-:guide-no-sources:
 
-// STUB
-This page is not written yet.
+// Sources:
+// starter-kits:agents/openclaw/deployment/README.md:116,123-137,139-150,161-165
+// openshell:crates/openshell-cli/src/main.rs:1423-1439,1534-1536,1579-1581
+// openshell:crates/openshell-cli/src/main.rs:1584-1638
+// openshell:crates/openshell-cli/src/main.rs:2098-2156,2288-2302
+// openshell:docs/how-it-works/sandboxes/overview.mdx:23-40
+// openshell:docs/how-it-works/policies/network-rules.mdx:57-77,352-360
+// openshell:docs/kubernetes/openshift.mdx:63-66
+// openshell:docs/how-it-works/sandboxes/runtimes.mdx:268
+// openshell:docs/upgrade/0-1-0.mdx:27
+// openclaw:docs/gateway/health.md:77-83
+
+This page runs the OpenClaw gateway inside an OpenShell sandbox and opens the single network path it needs.
+It assumes two things are already in place.
+An OpenShell gateway is installed and registered with the `openshell` CLI, which xref:admin/install-openshell.adoc[Install OpenShell for sandboxes] sets up.
+The OpenClaw flavor image is built and pushed to a registry the gateway can pull from, which xref:developer/build-image.adoc[Build and push the images] covers.
+
+The flow has three steps: create the sandbox with the gateway as its main process, forward the gateway port to your machine, and open egress to your model endpoint.
+
+image::sandbox-flow.svg["The OpenShell sandbox flow from a workstation: build and push the flavor image, create the sandbox on the gateway, forward the gateway port, and open egress to the model endpoint",role=expand]
+
+== Create the sandbox
+
+A sandbox runs one canonical main process.
+OpenShell starts the command you place after `--`, supervises it, and reports its exit status.
+The supervisor itself runs as PID 1 and ignores the image entrypoint, so the gateway does not start on its own.
+You name it explicitly as the main process instead.
+
+The gateway here runs unauthenticated and unconfigured, which keeps this first run simple.
+Giving it a model provider and persisting that configuration is the job of xref:developer/sandbox-model-config.adoc[Configure the model inside the sandbox].
+
+. Create the sandbox from the flavor image, with the gateway as the main process.
++
+[source,bash]
+----
+openshell sandbox create --name openclaw --detach \
+  --from <registry>/<namespace>/openclaw-sandbox:latest \
+  -- openclaw gateway --bind loopback --auth none --port 18789 --allow-unconfigured
+----
++
+`--from` takes the image reference the gateway pulls.
+`--detach` starts the main process without attaching a terminal to it.
+Everything after `--` is the gateway command that becomes the sandbox's main process.
++
+Check: the sandbox is listed on the gateway.
++
+[source,bash]
+----
+openshell sandbox list
+----
+// expect: contains "openclaw"
+
+[NOTE]
+====
+If you create a sandbox without a trailing command, OpenShell starts a login shell instead, and you start the gateway by hand inside it:
+
+[source,bash]
+----
+openclaw gateway --bind loopback --auth none --port 18789 --allow-unconfigured
+----
+====
+
+== Forward the gateway port
+
+The gateway binds to loopback inside the sandbox, so it is not reachable from your machine until you forward its port.
+A background forward maps local port 18789 to the same port in the sandbox and returns control to your shell.
+
+. Start the forward in the background.
++
+[source,bash]
+----
+openshell forward start 18789 openclaw --background
+----
++
+The first argument is the port to forward and the second is the sandbox name.
++
+Check: the forwarded gateway answers its liveness probe.
++
+[source,bash]
+----
+curl -s -o /dev/null -w "%{http_code}" http://localhost:18789/healthz
+----
+// expect: contains "200"
+
+With the forward running, open `http://localhost:18789` in a browser to reach the Control UI.
+
+== Allow access to the model endpoint
+
+The sandbox policy denies all network egress by default, so the gateway cannot reach a model endpoint until you add a rule for it.
+A network rule names the endpoint and the executable that opens the connection.
+For OpenClaw that executable is the Node.js runtime, so the rule lists its binary rather than the `openclaw` command.
+
+. Add an egress rule for the model endpoint, bound to the Node.js binary.
++
+[source,bash]
+----
+openshell policy update openclaw \
+  --add-endpoint <model-host>:<port> \
+  --binary /usr/local/bin/node \
+  --rule-name model_endpoint --wait
+----
++
+`--binary` must be the resolved real path of the executable, which is `/usr/local/bin/node` in this image, because OpenShell matches the path the kernel reports for the process, not a symlink.
+A rule also applies to processes the listed binary starts, so tools the gateway launches share it.
+`--wait` holds until the sandbox loads the new policy revision.
++
+Check: the active policy carries the rule you added.
++
+[source,bash]
+----
+openshell sandbox get openclaw --policy-only
+----
+// expect: contains "model_endpoint"
+
+[WARNING]
+====
+OpenShell blocks connections to private network addresses by default to prevent server-side request forgery.
+An endpoint reached by an exact hostname can still resolve to a private address, so give the rule the exact host name of an in-cluster model endpoint rather than an IP address or a wildcard.
+A destination that is loopback, link-local, or unspecified is never allowed outbound.
+====
+
+== OpenShift specifics
+
+Three details differ when the gateway runs the sandbox on OpenShift.
+
+* The sandbox runs with a UID and GID that OpenShift assigns from the namespace's range, which the Kubernetes driver reads from the `openshift.io/sa.scc.uid-range` annotation.
+So the sandbox needs no fixed user in the image and no elevated privileges.
+* The sandbox works in `/sandbox`.
+On Kubernetes the driver always uses `/sandbox` as the working directory, and `/workspace` from the base image is not writable there.
+* Sandboxes created with an OpenShell 0.0.x release are not compatible with the current release.
+Remove and recreate them after an upgrade to 0.1, because their persisted descriptors changed.
+
+When you finish with the sandbox, delete it to release its resources.
+
+. Delete the sandbox.
++
+[source,bash]
+----
+openshell sandbox delete openclaw
+----

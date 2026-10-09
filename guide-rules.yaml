@@ -148,3 +148,13 @@ rules:
       - 'podman push'
       - 'Containerfile\.openshell'
       - '^Check:'
+  - glob: "content/modules/ROOT/pages/developer/run-in-sandbox.adoc"
+    require_order:
+      - 'openshell sandbox create'
+      - 'openshell forward start'
+      - 'openshell policy update'
+    require:
+      - 'image::sandbox-flow\.svg\['
+      - '/usr/local/bin/node'
+      - '/workspace'
+      - '^Check:'
