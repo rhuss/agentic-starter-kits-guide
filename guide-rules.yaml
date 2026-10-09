@@ -141,3 +141,10 @@ rules:
       - 'SHASUMS256'
       - '(?i)sqlite'
       - 'AGENT_NAME'
+  - glob: "content/modules/ROOT/pages/developer/build-image.adoc"
+    require:
+      - 'podman build'
+      - '--platform linux/amd64'
+      - 'podman push'
+      - 'Containerfile\.openshell'
+      - '^Check:'

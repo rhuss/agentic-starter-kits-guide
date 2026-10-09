@@ -1,5 +1,111 @@
 = Build and push the images
-:guide-no-sources:
 
-// STUB
-This page is not written yet.
+// Sources:
+// starter-kits:agents/openclaw/deployment/README.md:112,116-121,154,164-165
+// starter-kits:agents/openclaw/deployment/Containerfile.openshell:7,9,18,32,37-39
+// starter-kits:sandboxes/base/README.md:19-24,30-40,51
+// starter-kits:sandboxes/base/entrypoint.sh:4,20-33
+
+Since OpenShell 0.1, `openshell sandbox create --from` takes an image reference only, and a gateway running on a cluster pulls that image from a registry.
+So before you can run OpenClaw in a sandbox, the OpenClaw flavor image has to exist in a registry your cluster can pull from.
+This page builds that image with podman and pushes it.
+
+The image is built in two layers, which xref:developer/sandbox-image.adoc[How the sandbox image is built] explains in full.
+The OpenClaw flavor, `Containerfile.openshell`, builds on a shared base image and adds Node.js and the OpenClaw CLI.
+For a quick build you can pull the shared base from its published location and build only the flavor.
+To control the whole image, build and push the base yourself, as the last section describes.
+
+== Build the OpenClaw flavor
+
+The flavor build starts `FROM quay.io/hmoghani/openshell-base:latest`, downloads a pinned Node.js runtime, installs the pinned OpenClaw release from npm, and runs a verification step.
+Build it for the architecture of the cluster that will pull it.
+OpenShell clusters run on x86_64, so when you build on an Apple Silicon machine you pass `--platform linux/amd64` to produce an x86_64 image rather than an arm64 one.
+
+. Change into the deployment directory of the recipe, where `Containerfile.openshell` lives.
++
+[source,bash]
+----
+cd agents/openclaw/deployment
+----
+
+. Build the flavor image, tagged for the registry your cluster can pull from.
++
+[source,bash]
+----
+podman build --platform linux/amd64 -t <registry>/<namespace>/openclaw-sandbox:latest -f Containerfile.openshell .
+----
++
+The build fails if the Node.js archive does not match its published checksum, or if `openclaw --version` reports an unsupported runtime.
+A green build therefore already confirms the two checks below, which the flavor runs itself before it finishes.
+
+[NOTE]
+====
+The base image sets an entrypoint that runs the command you name with its remaining arguments, so `podman run <image> openclaw --version` runs `openclaw --version` inside the image.
+On an Apple Silicon machine, running a `linux/amd64` image needs emulation in the podman machine.
+====
+
+Check: the image reports the OpenClaw version it was built with.
+
+[source,bash,subs="attributes+"]
+----
+podman run --rm <registry>/<namespace>/openclaw-sandbox:latest openclaw --version
+----
+// expect: contains "{openclaw-version}"
+
+Check: the image carries a Node.js 24 runtime.
+
+[source,bash]
+----
+podman run --rm <registry>/<namespace>/openclaw-sandbox:latest node --version
+----
+// expect: matches /v24\./
+
+== Push to a registry the cluster can pull from
+
+The gateway pulls the flavor image when it creates a sandbox, so the image has to live in a registry the cluster can reach and authenticate to.
+Log in to that registry with podman first if it needs credentials, then push the tag you built.
+
+. Push the flavor image.
++
+[source,bash]
+----
+podman push <registry>/<namespace>/openclaw-sandbox:latest
+----
+
+With the image in the registry, continue to xref:developer/run-in-sandbox.adoc[Run OpenClaw in an OpenShell sandbox] to create a sandbox from it.
+
+== Build the base image yourself
+
+The flavor's `FROM` points at `quay.io/hmoghani/openshell-base:latest`, which is published for development and testing.
+The production target for the base is `quay.io/redhat-ai/openshell-base`.
+To build on a base you control, rather than the development image, build and push the base yourself and point the flavor at it.
+
+. Change into the base directory of the starter kits.
++
+[source,bash]
+----
+cd sandboxes/base
+----
+
+. Build the base image for the same architecture as the flavor.
++
+[source,bash]
+----
+podman build --platform linux/amd64 -t <registry>/<namespace>/openshell-base:latest .
+----
+
+. Push the base image to your registry.
++
+[source,bash]
+----
+podman push <registry>/<namespace>/openshell-base:latest
+----
+
+. In `agents/openclaw/deployment/Containerfile.openshell`, change the `FROM` line to your base image instead of the development image.
++
+[source,dockerfile]
+----
+FROM <registry>/<namespace>/openshell-base:latest
+----
+
+. Rebuild and push the flavor so it layers on your base, following the two sections above.
