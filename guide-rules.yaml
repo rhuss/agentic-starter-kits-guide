@@ -191,3 +191,11 @@ rules:
       - '/healthz'
       - 'set-forwarded-headers'
       - 'otel-collector'
+  - glob: "content/modules/ROOT/pages/reference/configuration.adoc"
+    require:
+      - 'agents\.defaults\.model'
+      - 'models\.providers'
+      - 'gateway\.bind'
+      - 'allowedOrigins'
+      - 'diagnostics\.otel'
+      - 'plugins\.allow'

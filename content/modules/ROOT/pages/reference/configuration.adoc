@@ -1,5 +1,207 @@
 = Configuration reference
-:guide-no-sources:
 
-// STUB
-This page is not written yet.
+// Sources:
+// starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:4,12-57
+// starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/configmap-patch.yaml:1-2,10-19,36,50-66
+// starter-kits:agents/openclaw/deployment/overlays/example/configmap-patch.yaml:19,29,34-35
+// openclaw:docs/gateway/configuration/hot-reload.md:60-76,79-92,117-144,164-167,190-198
+// openclaw:docs/gateway/config-gateway.md:131-132,142,145-148,182,215-216
+// openclaw:docs/providers/vllm.md:11-17,91-115
+// openclaw:docs/gateway/opentelemetry/setup.md:17-40,44-56,164-173
+
+This page lists the `openclaw.json` keys the recipe sets, with the meaning of each key, its shipped value, and whether a change to it hot-applies or needs a gateway restart.
+It covers the keys in the base ConfigMap, the keys the tracing overlay adds or changes, the key the guide adds for the Route, and the key the guide warns against.
+For the manifest fields around `openclaw.json`, see xref:reference/manifests.adoc[Manifest reference].
+
+The configuration lives in the key `openclaw.json` of the ConfigMap `openclaw-config`, in `manifests/02-configmap.yaml` for the base deployment and in the overlay's `configmap-patch.yaml` for the tracing overlay.
+The ConfigMap seeds the gateway only on the first start, when the init container copies `openclaw.json` onto the PersistentVolumeClaim.
+After that, changes reach a running gateway through `config patch`, as xref:admin/change-config.adoc[Change the configuration of a running gateway] shows.
+
+== How a change applies
+
+The recipe does not set `gateway.reload`, so the gateway runs in the default reload mode `hybrid`.
+In `hybrid` mode the gateway applies hot-reloadable changes in place and restarts itself when a changed key needs it.
+
+OpenClaw classifies each changed configuration path as one of three outcomes: a `hot` reload that keeps the gateway process running, a `restart` of the gateway process, or `none` for a path with no runtime action.
+The longest matching path prefix decides the outcome, and a path that matches no rule defaults to a gateway restart.
+The "Reload" column in the tables below gives the outcome from this classification.
+
+The reload outcomes come from the OpenClaw documentation, not from the recipe.
+Reading them from the running gateway is the subject of the restart hint that `config patch` prints, described in xref:admin/change-config.adoc[Change the configuration of a running gateway].
+
+== Base ConfigMap keys
+
+The base ConfigMap `openclaw-config` ships the following `openclaw.json`.
+Values such as `YOUR-MODEL-ID` and `YOUR-VLLM-OR-OGX-ENDPOINT` are placeholders you replace before you apply the file; the `overlays/example/configmap-patch.yaml` file shows one filled-in form, with `vllm/my-model` and a concrete endpoint host.
+
+[cols="2,2,3,1",options="header"]
+|===
+| Key | Shipped value | Meaning | Reload
+
+| `gateway.port`
+| `18789`
+| The port the gateway binds for its combined WebSocket and HTTP listener.
+| Gateway restart
+
+| `gateway.bind`
+| `lan`
+| The bind mode. `lan` listens on `0.0.0.0`, which the recipe needs so the Pod's probes and the port-forward reach the gateway.
+| Gateway restart
+
+| `gateway.mode`
+| `local`
+| Runs the gateway process. The gateway refuses to start unless this is `local`.
+| Gateway restart
+
+| `gateway.auth.mode`
+| `token`
+| The authentication mode. In `token` mode a client authenticates with the shared gateway token.
+| Gateway restart
+
+| `channels`
+| `{}`
+| No chat channels. The recipe serves the Control UI only.
+| Depends on the setting
+
+| `agents.defaults.model`
+| `vllm/YOUR-MODEL-ID`
+| The default model reference for agents, as `<provider>/<model-id>`. The `vllm/` prefix names the provider below.
+| Hot reload
+
+| `agents.defaults.sandbox.mode`
+| `off`
+| Agents run without an OpenShell sandbox in the base recipe.
+| Hot reload
+
+| `models.mode`
+| `replace`
+| The declared providers replace the built-in model catalog rather than extend it.
+| Hot reload
+
+| `models.providers.vllm.baseUrl`
+| `https://YOUR-VLLM-OR-OGX-ENDPOINT/v1`
+| The OpenAI-compatible base URL of the model endpoint, ending in `/v1`.
+| Hot reload
+
+| `models.providers.vllm.api`
+| `openai-completions`
+| The API shape OpenClaw uses for the provider. vLLM speaks the OpenAI-compatible `openai-completions` API.
+| Hot reload
+
+| `models.providers.vllm.apiKey`
+| `not-needed`
+| The API key sent to the endpoint. The `VLLM_API_KEY` environment variable from the Secret overrides this value, so the recipe leaves a placeholder here.
+| Hot reload
+
+| `models.providers.vllm.models`
+| one entry: `id` and `name` `YOUR-MODEL-ID`, `reasoning` `false`, `input` `["text"]`, `contextWindow` `32768`, `maxTokens` `4096`
+| The declared model and its limits. OpenClaw protects this list against accidental removal, as xref:admin/change-config.adoc#replace-model[Switch the gateway to another model] explains.
+| Hot reload
+
+| `plugins`
+| `{}`
+| No plugin allowlist in the base recipe, so the gateway's default plugins load.
+| Hot reload
+
+| `tools.deny`
+| `["group:web", "browser"]`
+| Denies the web tool group and the browser tool, so the base deployment runs without web access.
+| Hot reload
+|===
+
+The `gateway.*` server keys (`port`, `bind`, `mode`, and the authentication mode) need a gateway restart.
+Changes under `agents`, `models`, and `tools` hot-apply.
+
+== Tracing overlay keys
+
+The tracing overlay's `configmap-patch.yaml` replaces the whole `openclaw.json`.
+It keeps the base keys and adds or changes the keys below to export OpenTelemetry traces through the `diagnostics-otel` plugin.
+xref:admin/tracing.adoc[Send traces to MLflow] applies this file, and xref:reference/manifests.adoc[Manifest reference] lists the overlay's other resources.
+
+[cols="2,2,3,1",options="header"]
+|===
+| Key | Overlay value | Meaning | Reload
+
+| `gateway.controlUi.enabled`
+| `true`
+| Turns the Control UI on explicitly.
+| Hot reload
+
+| `models.providers.vllm.apiKey`
+| `$\{VLLM_API_KEY}`
+| A reference to the `VLLM_API_KEY` environment variable instead of the base placeholder.
+| Hot reload
+
+| `plugins.allow`
+| `["diagnostics-otel"]`
+| An exclusive allowlist of the plugins the gateway loads. Only `diagnostics-otel` loads, so default plugins such as `device-pair` stay off; xref:admin/tracing.adoc[Send traces to MLflow] covers the effect.
+| Hot reload
+
+| `plugins.entries.diagnostics-otel.enabled`
+| `true`
+| Enables the `diagnostics-otel` plugin instance.
+| Hot reload
+
+| `diagnostics.enabled`
+| `true`
+| Turns diagnostic event collection on.
+| Hot reload
+
+| `diagnostics.otel.enabled`
+| `true`
+| Turns the OpenTelemetry exporter on.
+| Hot reload (exporter only)
+
+| `diagnostics.otel.endpoint`
+| `http://localhost:4318`
+| The OTLP endpoint the exporter sends to, the collector sidecar in the Pod.
+| Hot reload (exporter only)
+
+| `diagnostics.otel.traces`
+| `true`
+| Exports traces.
+| Hot reload (exporter only)
+
+| `diagnostics.otel.metrics`
+| `true`
+| Exports metrics. The overlay's collector has no metrics pipeline, so these go nowhere; xref:admin/tracing.adoc[Send traces to MLflow] notes it.
+| Hot reload (exporter only)
+
+| `diagnostics.otel.logs`
+| `false`
+| Does not export logs.
+| Hot reload (exporter only)
+|===
+
+With the `diagnostics-otel` plugin loaded, a change under `diagnostics.otel` restarts only the exporter service: the previous exporter flushes its buffered spans before the replacement starts with the new settings, and the gateway process keeps running.
+
+== Key the guide adds for the Route
+
+To reach the Control UI through the Route, the guide adds `gateway.controlUi.allowedOrigins`.
+The recipe's ConfigMap does not set it.
+
+[cols="2,3,1",options="header"]
+|===
+| Key | Meaning | Reload
+
+| `gateway.controlUi.allowedOrigins`
+| The browser-origin allowlist for Control UI connections. When it is unset, the recipe's `lan` bind makes the gateway seed the loopback origins `http://localhost:18789` and `http://127.0.0.1:18789` in memory at startup, which a port-forward matches. The Route's HTTPS address is not among them, so it goes into this list, as xref:admin/access.adoc[Open the Control UI] shows.
+| Hot reload
+|===
+
+Setting or changing the list hot-applies: pending handshakes recheck the new policy, and browser connections the new list no longer allows close.
+Removing the list with a patch is the exception.
+Restart the gateway after you remove it, as the note in xref:admin/change-config.adoc[Change the configuration of a running gateway] explains.
+
+== Key the guide warns against
+
+The guide warns against one key that looks like a fix for the Route's HTTP 403 but breaks the Pod's probes.
+
+[cols="2,3,1",options="header"]
+|===
+| Key | Meaning | Reload
+
+| `gateway.trustedProxies`
+| Reverse-proxy addresses whose forwarded-client headers the gateway trusts. Adding the cluster network here makes the gateway accept the router's forwarded headers, but the kubelet's probes come from the same node addresses without those headers, so the gateway answers `/startupz` with 403 and the Pod stops being ready. Use the Route annotation `haproxy.router.openshift.io/set-forwarded-headers: never` instead, as xref:admin/access.adoc[Open the Control UI] shows.
+| Hot reload
+|===
