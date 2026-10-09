@@ -1,5 +1,29 @@
 = Developer guide
-:guide-no-sources:
 
-// STUB
-This page is not written yet.
+// Sources:
+// starter-kits:agents/openclaw/deployment/README.md:112,114-121,123-137,139-150,152-158,165
+// starter-kits:sandboxes/base/README.md:3,9-11,27-47,51
+
+This part of the guide is for the developer who runs OpenClaw inside an OpenShell sandbox rather than as the gateway Deployment.
+It follows the recipe's `Containerfile.openshell`, which builds on the shared base image under `sandboxes/base/` and layers Node.js and the OpenClaw CLI on top.
+The path runs from the image layers, through building and pushing that image, to a running sandbox, and on to adapting the recipe for your own use.
+
+== The path through the Developer guide
+
+Work through the pages in this order.
+The first two build and publish the sandbox image, the next two start the gateway in a sandbox and let it reach your model, and the last one takes the recipe further.
+
+. xref:developer/sandbox-image.adoc[How the sandbox image is built]: see how the flavor Containerfile builds on the shared base image, which carries the `sandbox` user, the system packages, and the default policy, and adds Node.js and the OpenClaw CLI.
+. xref:developer/build-image.adoc[Build and push the images]: build the image with `podman` for `linux/amd64` and push it to a registry your cluster can pull from, because a gateway on the cluster pulls the image rather than reading a local build.
+. xref:developer/run-in-sandbox.adoc[Run OpenClaw in an OpenShell sandbox]: create the sandbox from that image with the gateway as its main process, then forward the gateway port to your machine.
+. xref:developer/sandbox-model-config.adoc[Configure the model inside the sandbox]: the sandbox policy denies network egress by default, so add a rule that lets the Node.js binary reach your model endpoint.
+. xref:developer/extend.adoc[Extend the recipe]: adapt the recipe, following the same base-plus-flavor pattern that the other agent sandboxes in the starter kits use.
+
+== What you need
+
+Have these ready before you start.
+
+* `podman`, to build the sandbox image and push it.
+* A registry your cluster can pull from, since the gateway reads the published image there.
+* The `openshell` CLI at version `{openshell-version}`, the version these pages are tested against.
+* An OpenShell gateway on the cluster, set up as in xref:admin/install-openshell.adoc[Install OpenShell for sandboxes].

@@ -125,3 +125,12 @@ rules:
       - 'openclaw-home-pvc'
       - '^\[CAUTION\]'
       - '(?i)use image entrypoint'
+  - glob: "content/modules/ROOT/pages/developer/index.adoc"
+    require_order:
+      - 'xref:developer/sandbox-image\.adoc'
+      - 'xref:developer/build-image\.adoc'
+      - 'xref:developer/run-in-sandbox\.adoc'
+      - 'xref:developer/sandbox-model-config\.adoc'
+      - 'xref:developer/extend\.adoc'
+    require:
+      - 'xref:admin/install-openshell\.adoc'
