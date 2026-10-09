@@ -1,5 +1,257 @@
 = Open the Control UI
-:guide-no-sources:
 
-// STUB
-This page is not written yet.
+// Sources:
+// starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:167-201,205
+// starter-kits:agents/openclaw/deployment/docs/troubleshooting.md:84-105
+// starter-kits:agents/openclaw/deployment/manifests/01-secret.yaml:4,8-10
+// starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:14-21
+// starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:87-91,110-128
+// starter-kits:agents/openclaw/deployment/manifests/06-route.yaml:4,7-11,19-21
+// openclaw:docs/install/kubernetes.md:33-36
+// openclaw:docs/web/control-ui.md:184
+// openclaw:docs/web/control-ui/connect-and-pair.md:15-30,38,44,49,52-54
+// openclaw:docs/cli/devices.md:27-29,40-53,116-125,175-183
+// openclaw:docs/gateway/trusted-proxy-auth.md:93
+// openclaw:docs/gateway/troubleshooting/agent-replies-and-control-ui.md:87
+// openclaw:docs/gateway/health.md:77-85
+// openclaw:src/gateway/origin-check.ts:20-27,108-151
+// openclaw:src/gateway/startup-control-ui-origins.ts:10-38
+// openclaw:src/config/gateway-control-ui-origins.ts:7-16,18-24,54-68,71-140
+// openclaw:src/gateway/server/ws-connection/connect-admission.ts:162-177
+// openclaw:src/gateway/ingress-attribution.ts:201-250
+// openclaw:src/gateway/net.ts:63-75,199-228
+// openclaw:src/gateway/server-http.ts:266-279,317-331,386-398
+// openclaw:src/gateway/http-common.ts:102-115
+// openclaw:src/gateway/server-http-probes.ts:109-120
+// openclaw:src/cli/devices-cli.runtime.ts:740-809,861,953-988,1030-1032,1089-1097
+
+The gateway serves the Control UI on port 18789, and you have two ways to reach it from a browser.
+A port-forward brings that port to your own machine and works as soon as the Pod is ready.
+The Route `openclaw` gives the gateway an HTTPS address outside the cluster, but a browser gets through it only after one configuration change and your approval.
+Either way, the login screen asks for the gateway token that you put into the Secret `openclaw-secrets` in xref:admin/configure-model.adoc[Configure the model endpoint and secrets].
+
+The commands on this page use the project `my-openclaw`, as xref:admin/deploy.adoc[Deploy OpenClaw] does.
+If you no longer have the token at hand, read it back from the Secret:
+
+[source,bash]
+----
+oc get secret openclaw-secrets -n my-openclaw -o jsonpath='{.data.OPENCLAW_GATEWAY_TOKEN}' | base64 -d
+----
+
+Users who connect through an address you hand them find their side of the login in xref:user/connect.adoc[Connect and pair your browser].
+
+== What the gateway checks before it lets a browser in
+
+The gateway checks three things before a browser gets to the chat, and the two ways in differ in how they get past each one.
+
+=== Forwarded headers
+
+OpenClaw treats a request that carries a `Forwarded`, `X-Forwarded-*`, or `X-Real-IP` header as proxy traffic.
+When such a request comes from an address outside `gateway.trustedProxies`, the gateway can't tell which client sent it.
+It then rejects the request on every route that needs gateway authentication, with HTTP 403 and the error type `proxy_attribution_required`.
+
+The OpenShift router adds `X-Forwarded-For` headers by default.
+That's why the recipe's Route carries the annotation `haproxy.router.openshift.io/set-forwarded-headers: never`, which tells the router not to add these headers.
+Manifests from before the OpenClaw 2026.9 update lack the annotation, so the Control UI doesn't load through their Route, and the browser gets the 403 instead.
+
+=== Allowed origins
+
+The gateway compares the `Origin` of the browser with the list in `gateway.controlUi.allowedOrigins`.
+A browser whose origin isn't on the list and isn't a private same-origin load gets its WebSocket connection closed with `origin not allowed`.
+
+The recipe's configuration binds the gateway with `"bind": "lan"`, a non-loopback bind, and sets no allowed origins.
+In that case the gateway adds `http://localhost:18789` and `http://127.0.0.1:18789` at startup.
+It keeps them in memory for the running process and doesn't write them to `openclaw.json`.
+A port-forward on local port 18789 matches these origins.
+The Route's HTTPS address doesn't, so it has to go into `gateway.controlUi.allowedOrigins`.
+
+=== Token and device pairing
+
+Every browser has to present the gateway token first, and a local connection doesn't skip this step.
+After the token, a new browser needs a one-time pairing approval.
+The gateway grants it by itself to a direct local connection, one that arrives over loopback without forwarded headers.
+The recipe documents that a browser on a port-forward gets this automatic approval.
+A browser behind the Route isn't a local connection, so it waits with `disconnected (1008): pairing required` until you approve its request.
+
+Each browser profile is a device of its own.
+A new profile, cleared site data, or a private window that discards site data on exit means a new pairing.
+
+== Open the Control UI through a port-forward
+
+The port-forward is the quickest way in, and it needs nothing beyond `oc` access to the project.
+Use it for your first look at the gateway after the deployment.
+
+. Forward local port 18789 to the gateway.
+Leave the command running and use a second terminal for the next steps.
++
+[source,bash]
+----
+oc port-forward deployment/openclaw 18789:18789 -n my-openclaw
+----
+
+. Confirm that the gateway answers through the forward.
+The startup endpoint `/startupz` answers without authentication.
++
+Check: the response reports the status `started`.
++
+[source,bash]
+----
+curl -s http://localhost:18789/startupz
+----
+// expect: contains "started"
+
+. Open `http://localhost:18789` in your browser and paste the gateway token into the *Gateway secret* field.
+The gateway approves the pairing of this local browser by itself, and the chat interface appears.
++
+Check: the device list shows a `Paired` table with your browser in it.
++
+[source,bash]
+----
+oc exec deployment/openclaw -c gateway -n my-openclaw -- node /app/dist/index.js devices list
+----
+// expect: contains "Paired"
+
+== Open the Control UI through the Route
+
+The Route gives the gateway an HTTPS address that browsers outside the cluster can open without `oc`, with TLS terminated at the router.
+Getting a browser through it takes three things: the annotation on the Route, the Route's address in the allowed origins, and your approval of each browser.
+
+[CAUTION]
+====
+The Route makes the gateway reachable for everyone who can reach the cluster's router.
+Anyone who gets that far sees the login screen.
+Only a browser with the gateway token gets as far as a pairing request, and only a browser you approve gets in.
+====
+
+. Make sure that the Route carries the annotation.
++
+Check: the output shows `set-forwarded-headers: never`.
++
+[source,bash]
+----
+oc get route openclaw -n my-openclaw -o yaml | grep set-forwarded-headers
+----
+// expect: contains "set-forwarded-headers: never"
++
+If the line is missing, your Route comes from manifests older than the OpenClaw 2026.9 update.
+Add the annotation:
++
+[source,bash]
+----
+oc annotate route openclaw -n my-openclaw \
+  haproxy.router.openshift.io/set-forwarded-headers=never --overwrite
+----
+
+. Confirm that the gateway answers through the Route.
++
+Check: the response reports the status `started` and no `proxy_attribution_required` error.
++
+[source,bash]
+----
+ROUTE_HOST=$(oc get route openclaw -n my-openclaw -o jsonpath='{.spec.host}')
+curl -s "https://$ROUTE_HOST/startupz"
+----
+// expect: contains "started" and not-contains "proxy_attribution_required"
+
+. Add the Route's address to the allowed origins.
+The patch replaces the whole list, because arrays in a patch replace the existing value.
+If you have added other origins before, include them in the array.
++
+[source,bash]
+----
+ROUTE_HOST=$(oc get route openclaw -n my-openclaw -o jsonpath='{.spec.host}')
+echo "{\"gateway\": {\"controlUi\": {\"allowedOrigins\": [\"https://$ROUTE_HOST\"]}}}" | \
+  oc exec -i deployment/openclaw -c gateway -n my-openclaw -- \
+  node /app/dist/index.js config patch --stdin
+----
++
+The change applies without a restart.
+xref:admin/change-config.adoc[Change the configuration of a running gateway] explains how `config patch` merges a change into the configuration on the PVC.
++
+Check: the allowed origins contain the Route's HTTPS address.
++
+[source,bash]
+----
+oc exec deployment/openclaw -c gateway -n my-openclaw -- node /app/dist/index.js config get gateway.controlUi.allowedOrigins
+----
+// expect: contains "https://"
+
+. Open `https://<route-host>` in your browser and paste the gateway token into the *Gateway secret* field.
+The login screen reports `disconnected (1008): pairing required`.
+Keep the page open.
+It retries on its own and connects once you have approved the request.
+
+. List the pending requests.
++
+Check: the output has a `Pending` table, and the `Request` column holds the request ID of your browser.
++
+[source,bash]
+----
+oc exec deployment/openclaw -c gateway -n my-openclaw -- node /app/dist/index.js devices list
+----
+// expect: contains "Pending"
+
+. Approve the request by its exact ID.
+`devices approve --latest` and `devices approve` without an ID only preview the newest pending request and exit with code 1, so they approve nothing.
+If the browser retried with changed details in the meantime, the gateway replaced its request with a new ID, so list the requests again before you approve.
++
+Check: the command prints `Approved` with the device ID.
++
+[source,bash]
+----
+oc exec deployment/openclaw -c gateway -n my-openclaw -- node /app/dist/index.js devices approve <request-id>
+----
+// expect: contains "Approved"
++
+The page in the browser now connects.
+The browser stays approved until you revoke it, as <<manage-devices>> shows.
+
+[WARNING]
+====
+Don't add the cluster network to `gateway.trustedProxies` as a replacement for the annotation.
+On OVN-Kubernetes, the kubelet's health probes come from the same node addresses as the router, but without forwarded headers.
+The gateway can't attribute a request from a trusted proxy address that names no client.
+It answers the startup and readiness probes on `/startupz` with 403 as well, and the Pod stops being ready.
+====
+
+[#manage-devices]
+== Manage approved devices
+
+An approved browser stays paired until you revoke it, and every browser profile counts as a device of its own.
+Revoke a device when its browser should lose access.
+Remove entries that nobody uses anymore, such as those of private windows.
+
+. List the devices.
++
+Check: the output has a `Paired` table, followed by the full device IDs.
++
+[source,bash]
+----
+oc exec deployment/openclaw -c gateway -n my-openclaw -- node /app/dist/index.js devices list
+----
+// expect: contains "Paired"
+
+. Revoke the token of a device for one role.
+Take the device ID and the role from the `Device ID` and `Roles` columns of the list.
+The browser then has to be approved again before it connects.
++
+Check: the command exits with status 0 and prints the result as JSON.
++
+[source,bash]
+----
+oc exec deployment/openclaw -c gateway -n my-openclaw -- node /app/dist/index.js devices revoke --device <device-id> --role <role>
+----
+// expect: exit 0
+
+. Remove a device entry that nobody uses anymore.
++
+Check: the command prints `Removed` with the device ID.
++
+[source,bash]
+----
+oc exec deployment/openclaw -c gateway -n my-openclaw -- node /app/dist/index.js devices remove <device-id>
+----
+// expect: contains "Removed"
+
+xref:reference/troubleshooting.adoc[Troubleshooting] covers the Route's HTTP 403 and pairing problems in more detail.
+Next, xref:admin/change-config.adoc[Change the configuration of a running gateway] shows how configuration changes such as the allowed origins reach a running gateway.

@@ -72,3 +72,12 @@ rules:
     require:
       - '^Check:'
       - 'xref:admin/access\.adoc'
+  - glob: "content/modules/ROOT/pages/admin/access.adoc"
+    require:
+      - 'oc port-forward'
+      - 'set-forwarded-headers'
+      - 'allowedOrigins'
+      - 'proxy_attribution_required'
+      - 'devices approve <request-id>'
+      - 'trustedProxies'
+      - '^Check:'
