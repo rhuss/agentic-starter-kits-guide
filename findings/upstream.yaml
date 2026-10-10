@@ -1,0 +1,939 @@
+# Upstream findings collected by cc-guide runs; file them with /guide:upstream.
+findings:
+- id: UF-1
+  source: starter-kits
+  kind: doc-drift
+  locations:
+  - ref: agents/openclaw/deployment/README.md:161
+    quote: OpenShell's supervisor runs as PID 1 and ignores the image entrypoint.
+  summary: The OpenShell notes say the supervisor runs as PID 1 in the sandbox, which
+    does not match how OpenShell 0.1.2 runs on Kubernetes.
+  evidence: openshell docs/about/architecture.mdx:104 (v0.1.2) puts the Kubernetes
+    supervisor in its own pod, and docs/kubernetes/setup.mdx:21-23 says the driver
+    creates a separate supervisor Pod; inside the workload, architecture/compute-runtimes.md:389,393-395
+    has openshell-sandbox override the image command. The only PID 1 statement in
+    OpenShell is for the VM runtime (compute-runtimes.md:305).
+  status: collected
+- id: UF-2
+  source: starter-kits
+  kind: doc-drift
+  locations:
+  - ref: agents/openclaw/deployment/README.md:163
+    quote: Sandboxes created with OpenShell 0.0.x must be recreated after an upgrade
+      to 0.1.
+  summary: The upgrade note says to recreate 0.0.x sandboxes after the upgrade, while
+    OpenShell says to remove them before it.
+  evidence: 'openshell docs/upgrade/0-1-0.mdx:27 (v0.1.2): "Remove 0.0.x sandboxes
+    before the upgrade and recreate them afterward."'
+  status: collected
+- id: UF-3
+  source: starter-kits
+  kind: stale-reference
+  locations:
+  - ref: agents/openclaw/deployment/README.md:3
+    quote: '> Tested: 2026-04-13 on OpenShift 4.19 (ROSA) with vLLM model serving'
+  summary: The deployment README still carries the April 2026 tested line although
+    the raw deployment doc was retested in October 2026.
+  evidence: 'agents/openclaw/deployment/docs/raw-deployment.md:3 says "Tested: 2026-10-08
+    on OpenShift 4.22 with OpenClaw 2026.9.8"; the README line was not updated with
+    that change.'
+  status: collected
+- id: UF-4
+  source: starter-kits
+  kind: doc-drift
+  locations:
+  - ref: agents/openclaw/deployment/README.md:12
+    quote: no cluster-admin required.
+  summary: '"No cluster-admin required" holds only for the base manifests, not for
+    the MLflow tracing path on RHOAI 3.3.1 or the OpenShell sandbox path.'
+  evidence: agents/openclaw/deployment/docs/mlflow-tracing.md:129 says RHOAI 3.3.1
+    does not ship the mlflow-integration ClusterRole, so it has to be created; the
+    OpenShell 0.1.2 chart creates a ClusterRole and ClusterRoleBinding (openshell
+    deploy/helm/openshell/templates/clusterrole.yaml:5-8) and needs the Agent Sandbox
+    CRDs (docs/kubernetes/setup.mdx:50-58); claw-installer README.md:35-36 calls the
+    OpenShell install cluster-admin work.
+  status: collected
+- id: UF-5
+  source: starter-kits
+  kind: doc-drift
+  locations:
+  - ref: agents/openclaw/deployment/README.md:48-58
+    quote: '|              Pod                     |'
+  summary: The README architecture diagram shows a Pod with only the gateway and omits
+    the init container, the Secret, the ConfigMap, and the optional collector sidecar.
+  evidence: agents/openclaw/deployment/manifests/04-deployment.yaml:21-64 defines
+    the init-config init container and mounts the ConfigMap and the PVC; overlays/mlflow-tracing/deployment-patch.yaml:21-46
+    adds the otel-collector sidecar.
+  status: collected
+- id: UF-6
+  source: starter-kits
+  kind: doc-drift
+  locations:
+  - ref: agents/openclaw/deployment/README.md:71
+    quote: '| `manifests/01-secret.yaml` | Gateway authentication token |'
+  - ref: agents/openclaw/deployment/README.md:89
+    quote: '| Gateway token | `manifests/01-secret.yaml` |'
+  summary: The README file table and customization table describe the Secret as holding
+    only the gateway token, although it also holds VLLM_API_KEY.
+  evidence: agents/openclaw/deployment/manifests/01-secret.yaml:11 sets VLLM_API_KEY,
+    and manifests/04-deployment.yaml:92-96 passes it to the gateway.
+  status: collected
+- id: UF-7
+  source: starter-kits
+  kind: missing-doc
+  locations:
+  - ref: agents/openclaw/deployment/README.md:86-87
+    quote: '| Model endpoint URL | `overlays/<env>/configmap-patch.yaml` |'
+  summary: The README customization table places the model endpoint and storage class
+    only in overlays, while the raw deployment doc edits the base manifests directly.
+  evidence: agents/openclaw/deployment/docs/raw-deployment.md:65 edits manifests/02-configmap.yaml
+    and :125 edits manifests/03-pvc.yaml; both ways work, but the README names only
+    the overlay route.
+  status: collected
+- id: UF-8
+  source: starter-kits
+  kind: doc-drift
+  locations:
+  - ref: agents/openclaw/deployment/README.md:116
+    quote: takes an image reference only
+  summary: The README says `openshell sandbox create --from` takes an image reference
+    only, while the 0.1.2 CLI also accepts a rootfs tar.
+  evidence: 'openshell crates/openshell-cli/src/main.rs:1432-1437 (v0.1.2): the --from
+    source is "a rootfs tar archive (`.tar`, `.tar.gz`, or `.tgz`) or a container
+    image reference"; the tar is staged for the VM driver. Minor: the registry image
+    path the recipe uses is correct.'
+  status: collected
+- id: UF-9
+  source: starter-kits
+  kind: missing-doc
+  locations:
+  - ref: agents/openclaw/deployment/README.md:130
+    quote: -- openclaw gateway --bind loopback --auth none --port 18789 --allow-unconfigured
+  summary: The OpenShell sandbox section starts an unconfigured gateway and does not
+    say how to give it a model provider, an API key, or that its configuration persists
+    on /sandbox.
+  evidence: No starter-kits doc covers configuring the sandboxed gateway; the guide
+    run did it live with `openshell sandbox exec ... -- openclaw config patch --stdin`,
+    which stores /sandbox/.openclaw/openclaw.json on the sandbox volume. For API keys,
+    openshell docs/how-it-works/inference.mdx:128-134 (v0.1.2) requires an imported
+    provider profile per self-hosted endpoint.
+  status: collected
+- id: UF-10
+  source: starter-kits
+  kind: doc-drift
+  locations:
+  - ref: agents/openclaw/templates/openclaw_agent/README.md:5
+    quote: Open-source AI coding assistant built on [OpenClaw]
+  - ref: agents/openclaw/templates/openclaw_agent/README.md:16
+    quote: '- Web-based coding assistant with built-in gateway (port 18789)'
+  summary: The agent template describes OpenClaw as an AI coding assistant, while
+    OpenClaw describes itself as a general AI assistant.
+  evidence: 'openclaw README.md:18 (pinned fc23bc8): "OpenClaw is an open-source AI
+    assistant that runs on your own computer and meets you in the channels you already
+    use"; docs/start/why-openclaw.md:11 calls it an extensible, proactive, open-source
+    AI agent.'
+  status: collected
+- id: UF-11
+  source: starter-kits
+  kind: doc-drift
+  locations:
+  - ref: agents/openclaw/templates/openclaw_agent/agent.yaml:4
+    quote: gateway-based model routing and multi-channel support.
+  summary: The agent card promises multi-channel support, while the recipe's configuration
+    enables no channels.
+  evidence: 'agents/openclaw/deployment/manifests/02-configmap.yaml:22 sets `"channels":
+    {}`.'
+  status: collected
+- id: UF-12
+  source: starter-kits
+  kind: bug
+  locations:
+  - ref: agents/openclaw/templates/openclaw_agent/agent.yaml:7
+    quote: 'deploymentModel: config-driven'
+  - ref: tests/behavioral/deterministic/deploy_agents.py:83
+    quote: _KNOWN_DEPLOYMENT_MODELS = (None, FLOW_IMPORT)
+  summary: 'The OpenClaw agent template declares `deploymentModel: config-driven`,
+    a value the repository''s behavioral deploy tooling rejects.'
+  evidence: tests/behavioral/deterministic/deploy_agents.py:218-233 raises DeploymentModelError
+    for any value other than unset or flow-import, load_agent_env_spec runs that check
+    first (:249), and test_deploy_agents.py:198-206 asserts the error for exactly
+    `config-driven`. Either implement the model or document it as catalog-only metadata.
+  status: collected
+- id: UF-13
+  source: starter-kits
+  kind: doc-drift
+  locations:
+  - ref: README.md:51
+    quote: Deploy OpenClaw on OpenShift with vLLM model serving, OAuth SSO, and production-grade
+      security.
+  summary: The root catalog promises OAuth SSO for the OpenClaw recipe, but the recommended
+    raw manifests have no OAuth proxy.
+  evidence: agents/openclaw/deployment/README.md:67-77 lists the raw manifests (no
+    OAuth proxy), manifests/02-configmap.yaml:18-20 sets gateway auth mode token,
+    and only the installer path adds OAuth (docs/installer-deployment.md:5).
+  status: collected
+- id: UF-14
+  source: starter-kits
+  kind: stale-reference
+  locations:
+  - ref: AGENTS.md:126
+    quote: Uses pre-built image (`ghcr.io/openclaw/openclaw:latest`)
+  summary: AGENTS.md says the OpenClaw recipe uses the `:latest` image, while the
+    manifests pin the 2026.9.8 digest.
+  evidence: agents/openclaw/deployment/manifests/04-deployment.yaml:24 and :68 use
+    `ghcr.io/openclaw/openclaw@sha256:d0ded1dd...`.
+  status: collected
+- id: UF-15
+  source: starter-kits
+  kind: bug
+  locations:
+  - ref: agents/openclaw/deployment/manifests/01-secret.yaml:10
+    quote: 'OPENCLAW_GATEWAY_TOKEN: "CHANGE-ME"'
+  summary: The Secret's placeholder token `CHANGE-ME` is not on OpenClaw's known-weak
+    list, so a forgotten placeholder becomes a live gateway token.
+  evidence: openclaw src/gateway/known-weak-gateway-secrets.ts:7-10 rejects only `change-me-to-a-long-random-token`
+    and `change-me-now`. Suggest a placeholder OpenClaw rejects, or an empty value,
+    plus a generation hint such as `openssl rand -hex 32` at docs/raw-deployment.md:120.
+  status: collected
+- id: UF-16
+  source: starter-kits
+  kind: dead-config
+  locations:
+  - ref: agents/openclaw/deployment/manifests/02-configmap.yaml:37
+    quote: '"apiKey": "not-needed",'
+  summary: 'The base ConfigMap''s `apiKey: not-needed` has no effect because the Deployment
+    always sets VLLM_API_KEY from the Secret, and no doc explains this.'
+  evidence: openclaw src/agents/model-auth-provider.ts:584-587 returns the provider
+    env key before the configured literal key; manifests/04-deployment.yaml:92-96
+    always sets VLLM_API_KEY. The tracing overlay already uses `"${VLLM_API_KEY}"`
+    (overlays/mlflow-tracing/configmap-patch.yaml:36); docs/raw-deployment.md:82,104
+    and overlays/example/configmap-patch.yaml:31 repeat `not-needed`.
+  status: collected
+- id: UF-17
+  source: starter-kits
+  kind: stale-reference
+  locations:
+  - ref: agents/openclaw/deployment/manifests/kustomization.yaml:12
+    quote: 'commonLabels:'
+  summary: The kustomization uses `commonLabels`, which Kustomize v5 deprecates, so
+    every apply prints a deprecation warning.
+  evidence: '`oc kustomize` and `oc apply -k` print "''commonLabels'' is deprecated.
+    Please use ''labels'' instead." (observed live during the guide run).'
+  status: collected
+- id: UF-18
+  source: starter-kits
+  kind: dead-config
+  locations:
+  - ref: agents/openclaw/deployment/manifests/04-deployment.yaml:83-84
+    quote: '- name: OPENCLAW_CONFIG_DIR'
+  summary: The Deployment sets OPENCLAW_CONFIG_DIR, which nothing in the OpenClaw
+    runtime reads.
+  evidence: At openclaw fc23bc8, OPENCLAW_CONFIG_DIR appears only in host-side Docker
+    and Podman scripts, docker-compose.yml, docs, tests, and scripts/k8s/manifests/deployment.yaml,
+    never in src/. Harmless (HOME gives the same path) but misleading. Low confidence
+    that no build step reads it.
+  status: collected
+- id: UF-19
+  source: starter-kits
+  kind: missing-doc
+  locations:
+  - ref: agents/openclaw/deployment/manifests/04-deployment.yaml:129-133
+    quote: 'allowPrivilegeEscalation: false'
+  summary: The gateway container does not set readOnlyRootFilesystem, unlike OpenClaw's
+    own Kubernetes manifest, and the recipe does not explain the difference or the
+    missing NetworkPolicy and token rotation.
+  evidence: 'openclaw scripts/k8s/manifests/deployment.yaml:154 sets `readOnlyRootFilesystem:
+    true` with a /tmp emptyDir; the recipe''s manifests have no readOnlyRootFilesystem
+    and no NetworkPolicy.'
+  status: collected
+- id: UF-20
+  source: starter-kits
+  kind: doc-drift
+  locations:
+  - ref: agents/openclaw/deployment/docs/raw-deployment.md:14
+    quote: Direct vLLM server with `--enable-auto-tool-choice --tool-call-parser openai`
+  summary: The general vLLM prerequisite names `--tool-call-parser openai`, which
+    fits gpt-oss models only, while the doc's own tested model needs another parser.
+  evidence: raw-deployment.md:3 tests Qwen2.5-0.5B-Instruct, whose tested deployment
+    runs `--tool-call-parser hermes` (confirmed live by the guide run). The prerequisite
+    should name the parser per model family.
+  status: collected
+- id: UF-21
+  source: starter-kits
+  kind: missing-doc
+  locations:
+  - ref: agents/openclaw/deployment/docs/raw-deployment.md:20
+    quote: oc version
+  summary: The prerequisite check runs `oc version` without saying what to look for,
+    and a namespace-scoped user gets no server version from it.
+  evidence: For namespace-scoped users, `oc version` prints no `Server Version` line
+    (observed live), so the check cannot confirm the "OpenShift 4.17+" prerequisite
+    at raw-deployment.md:11 for the persona the recipe targets.
+  status: collected
+- id: UF-22
+  source: starter-kits
+  kind: doc-drift
+  locations:
+  - ref: agents/openclaw/deployment/docs/raw-deployment.md:158-165
+    quote: '[gateway] ready'
+  summary: The expected startup log is abbreviated without saying so, and the `[gateway]
+    ready` check text does not match the colored log line.
+  evidence: openclaw src/gateway/server-startup-log.ts:62-82 also logs `log file:`,
+    `native runtime:` and `worker startup state:` lines, after any doctor output.
+    Live `oc logs` output colors `[gateway]` and `ready` separately (ANSI codes in
+    between) and also prints `[gateway] spawn broker ready`, so a literal search for
+    `[gateway] ready` (raw-deployment.md:237) fails; the doc's `grep -E "migrated|ready"`
+    (:240) still matches.
+  status: collected
+- id: UF-23
+  source: starter-kits
+  kind: missing-doc
+  locations:
+  - ref: agents/openclaw/deployment/docs/raw-deployment.md:187
+    quote: 'echo "{\"gateway\": {\"controlUi\": {\"allowedOrigins\": [\"https://${ROUTE_HOST}\"]}}}"
+      | \'
+  summary: The Route step patches `allowedOrigins` to the Route only and does not
+    say that this replaces any origins added earlier.
+  evidence: raw-deployment.md:205 states that arrays replace in a config patch, so
+    the patch drops earlier entries; the doc does not warn about it.
+  status: collected
+- id: UF-24
+  source: starter-kits
+  kind: doc-drift
+  locations:
+  - ref: agents/openclaw/deployment/docs/raw-deployment.md:199
+    quote: OpenClaw answers requests with forwarded headers from a proxy outside `gateway.trustedProxies`
+      with HTTP 403
+  - ref: agents/openclaw/deployment/docs/troubleshooting.md:88
+    quote: OpenClaw 2026.9 answers requests with forwarded headers from a proxy outside
+      `gateway.trustedProxies` with HTTP 403.
+  summary: The docs say OpenClaw answers all requests with forwarded headers from
+    an untrusted proxy with 403, but only gateway-authenticated routes are rejected.
+  evidence: openclaw src/gateway/server-http.ts:266-279 answers the live probe path
+    before proxy attribution, plugin-authenticated routes may still answer (server-http.ts:317-328),
+    and docs/gateway/trusted-proxy-auth.md:93 limits the rejection to Gateway-authenticated
+    routes. This also explains why only the /startupz probes fail when the cluster
+    network is in trustedProxies. Wording, low priority.
+  status: collected
+- id: UF-25
+  source: starter-kits
+  kind: missing-doc
+  locations:
+  - ref: agents/openclaw/deployment/docs/raw-deployment.md:205
+    quote: 'Objects merge, arrays and scalars replace, and `null` deletes a key:'
+  summary: The patch rules omit that OpenClaw refuses a patch that drops model IDs
+    from a provider's model list unless `--replace-path` is given.
+  evidence: openclaw src/cli/config-cli-path.ts:506-517 refuses to replace `models.providers.<id>.models`
+    when IDs would be removed; docs/cli/config.md:222 lists the protected paths and
+    :441 documents `--replace-path`.
+  status: collected
+- id: UF-26
+  source: starter-kits
+  kind: missing-doc
+  locations:
+  - ref: agents/openclaw/deployment/docs/raw-deployment.md:243
+    quote: '## Next: Enable tracing (optional)'
+  summary: The raw deployment doc has no removal or uninstall section; only the installer
+    doc covers rollback.
+  evidence: raw-deployment.md ends with tracing and references (:243-253); `oc delete
+    -k` for the raw path has no recipe source. Matches research gap G06.
+  status: collected
+- id: UF-27
+  source: starter-kits
+  kind: doc-drift
+  locations:
+  - ref: agents/openclaw/deployment/docs/troubleshooting.md:124
+    quote: '**Fix:** Patch the ConfigMap with the correct model provider config, then
+      restart:'
+  - ref: agents/openclaw/deployment/docs/troubleshooting.md:172
+    quote: '**Fix:** Set `heartbeat.every` to `"0m"` in the ConfigMap:'
+  summary: The wrong-model and heartbeat fixes edit the ConfigMap and restart, which
+    no longer changes a running deployment because the init container seeds `openclaw.json`
+    only once.
+  evidence: manifests/04-deployment.yaml:42-50 keeps an existing PVC copy ("Config
+    exists, keeping it"), and docs/raw-deployment.md:205 says the ConfigMap is copied
+    only on the first start; the fix should use `openclaw config patch`. The cause
+    at troubleshooting.md:113 ("auto-generates its config on first start") predates
+    the seed-once init container. The verification grep of `agent model` (:145) is
+    written only at startup (openclaw src/gateway/server-startup-log.ts:117-128).
+  status: collected
+- id: UF-28
+  source: starter-kits
+  kind: stale-reference
+  locations:
+  - ref: agents/openclaw/deployment/docs/troubleshooting.md:181
+    quote: '# Also add to each agent in agents.list:'
+  summary: The heartbeat fix uses the legacy `agents.list` key, which OpenClaw 2026.9
+    migrates to keyed `agents.entries`.
+  evidence: openclaw docs/gateway/doctor/config-migrations.md:399 maps `agents.list`
+    to keyed `agents.entries`, and docs/gateway/heartbeat.md:96 names `agents.entries.*.heartbeat.every`.
+  status: collected
+- id: UF-29
+  source: starter-kits
+  kind: doc-drift
+  locations:
+  - ref: agents/openclaw/deployment/docs/troubleshooting.md:162
+    quote: OpenClaw's heartbeat scheduler fires every 30 minutes by default, sending
+      `HEARTBEAT_OK` messages to the chat.
+  summary: The heartbeat flooding entry presents chat messages every 30 minutes as
+    default behavior, but with the recipe's configuration (no channels, no owner)
+    heartbeat polls are skipped.
+  evidence: 'openclaw docs/gateway/heartbeat.md:97 ("Without a resolvable owner DM,
+    ambient polls skip with `reason=no-route`") and :349 (the poll is skipped "before
+    the agent runs"); the recipe sets `"channels": {}` (manifests/02-configmap.yaml:22).
+    The entry should be scoped to deployments that set a heartbeat target or owner.'
+  status: collected
+- id: UF-30
+  source: starter-kits
+  kind: doc-drift
+  locations:
+  - ref: agents/openclaw/deployment/docs/troubleshooting.md:235
+    quote: If the config on the PVC conflicts with the ConfigMap, the gateway detects
+      a change, overwrites the file
+  summary: The CrashLoopBackOff cause describes the old copy-on-every-start behavior
+    that the same doc calls fixed.
+  evidence: troubleshooting.md:286 says manifests older than the 2026.9 update copied
+    `openclaw.json` on every start, and manifests/04-deployment.yaml:42-50 now seeds
+    it only once. The fix (:246-254) still deletes the PVC.
+  status: collected
+- id: UF-31
+  source: starter-kits
+  kind: stale-reference
+  locations:
+  - ref: agents/openclaw/deployment/docs/troubleshooting.md:259
+    quote: oc cp <pod-name>:/data/.openclaw /tmp/openclaw-backup -c gateway -n <namespace>
+  summary: The backup command copies `/data/.openclaw`, a path neither the raw manifests
+    nor the installer use.
+  evidence: manifests/04-deployment.yaml:97-99 mounts the PVC at /home/node with state
+    in /home/node/.openclaw, and raw-deployment.md:221 backs up with `-C /home/node
+    .openclaw`; claw-installer src/server/deployers/k8s-manifests.ts:38-40 uses the
+    same layout.
+  status: collected
+- id: UF-32
+  source: starter-kits
+  kind: doc-drift
+  locations:
+  - ref: agents/openclaw/deployment/docs/troubleshooting.md:312
+    quote: '"Too many failed authentication attempts (retry later)"'
+  summary: The rate-limiter symptom quotes a browser message whose casing and prefix
+    differ from the gateway's actual message.
+  evidence: 'openclaw src/gateway/server/ws-connection/auth-messages.ts:79 returns
+    "unauthorized: too many failed authentication attempts (retry later)". Low priority.'
+  status: collected
+- id: UF-33
+  source: starter-kits
+  kind: doc-drift
+  locations:
+  - ref: agents/openclaw/deployment/docs/troubleshooting.md:314
+    quote: '**Fix (both steps required):**'
+  summary: The rate-limiter fix heading says both steps are required but lists three
+    numbered steps.
+  evidence: troubleshooting.md:316-331 numbers steps 1, 2, and 3 under that heading.
+    Minor.
+  status: collected
+- id: UF-34
+  source: starter-kits
+  kind: doc-drift
+  locations:
+  - ref: agents/openclaw/deployment/docs/model-compatibility.md:30
+    quote: '| `openai-compat/` | Self-hosted vLLM endpoint | OpenClaw PI runtime |'
+  - ref: agents/openclaw/deployment/docs/troubleshooting.md:132
+    quote: '# - Set agents.defaults.model.primary to "openai-compat/gpt-oss-20b"'
+  summary: The provider routing table and the wrong-model example use an `openai-compat/`
+    prefix and `model.primary`, while the recipe's configuration uses provider `vllm`
+    and a string model.
+  evidence: 'manifests/02-configmap.yaml:25 sets `"model": "vllm/YOUR-MODEL-ID"` and
+    :34 declares provider `vllm`; claw-installer names its custom provider `endpoint`
+    (src/server/deployers/k8s-helpers.ts:40).'
+  status: collected
+- id: UF-35
+  source: starter-kits
+  kind: stale-reference
+  locations:
+  - ref: agents/openclaw/deployment/docs/model-compatibility.md:3
+    quote: '> Tested: 2026-04-13'
+  summary: The model compatibility table is dated April 2026, omits the models the
+    current tested lines use, and defines no criteria for Working, Partial, Expected,
+    or Broken.
+  evidence: raw-deployment.md:3 tests Qwen2.5-0.5B-Instruct and :5 gpt-oss-120b via
+    OGX; mlflow-tracing.md:3 also tests Qwen2.5-0.5B-Instruct. Neither appears in
+    the table at model-compatibility.md:9-16.
+  status: collected
+- id: UF-36
+  source: starter-kits
+  kind: stale-reference
+  locations:
+  - ref: agents/openclaw/deployment/docs/installer-deployment.md:3
+    quote: '> Tested: 2026-04-13 on OpenShift 4.19 (ROSA) with vLLM model serving'
+  summary: The installer doc still carries the April 2026 tested line and pre-2026.9
+    content.
+  evidence: The raw deployment doc was retested on 2026-10-08 with OpenClaw 2026.9.8
+    (raw-deployment.md:3); the installer doc's tables disagree with the installer
+    code in several places (see the other installer-deployment.md findings).
+  status: collected
+- id: UF-37
+  source: starter-kits
+  kind: naming-ux
+  locations:
+  - ref: agents/openclaw/deployment/docs/installer-deployment.md:5
+    quote: '[openclaw-installer](https://github.com/sallyom/claw-installer)'
+  - ref: agents/openclaw/deployment/docs/installer-deployment.md:123
+    quote: git clone https://github.com/sallyom/claw-installer.git
+  summary: The installer is called openclaw-installer and claw-installer in different
+    places, and the doc clones a repository name that differs from the one the installer
+    README uses.
+  evidence: deployment README.md:100,105 call it claw-installer; claw-installer README.md:8
+    clones `sallyom/openclaw-installer.git`. Both names refer to the same repository.
+  status: collected
+- id: UF-38
+  source: starter-kits
+  kind: stale-reference
+  locations:
+  - ref: agents/openclaw/deployment/docs/installer-deployment.md:125
+    quote: npm install && npm run build && npm run dev
+  - ref: agents/openclaw/deployment/docs/installer-deployment.md:134
+    quote: Next.js x.x.x
+  summary: The installer start instructions show a Next.js dev server, while the installer
+    uses tsx and vite and its README recommends `./run.sh`.
+  evidence: claw-installer package.json:33 runs `tsx watch src/server/index.ts` and
+    `vite`; claw-installer README.md:5-14 starts it with `./run.sh`.
+  status: collected
+- id: UF-39
+  source: starter-kits
+  kind: doc-drift
+  locations:
+  - ref: agents/openclaw/deployment/docs/installer-deployment.md:396
+    quote: '| `OPENCLAW_HOME` | Env var | `/data/.openclaw` | Data directory on PVC
+      |'
+  summary: The installer doc gives the data directory as /data/.openclaw, while the
+    installer mounts the PVC at /home/node with state in /home/node/.openclaw.
+  evidence: claw-installer src/server/deployers/k8s-manifests.ts:38-40 sets the mount
+    to /home/node and the runtime dir to /home/node/.openclaw.
+  status: collected
+- id: UF-40
+  source: starter-kits
+  kind: doc-drift
+  locations:
+  - ref: agents/openclaw/deployment/docs/installer-deployment.md:402-404
+    quote: '| Init Container | Same as gateway | `ghcr.io/openclaw/openclaw:latest`
+      |'
+  summary: The installer image table says the init container uses the gateway image,
+    while the installer uses ubi9-minimal.
+  evidence: claw-installer src/server/deployers/k8s-manifests.ts:833 uses `registry.access.redhat.com/ubi9-minimal:latest`
+    for init-config; the gateway default is `ghcr.io/openclaw/openclaw:latest` (k8s-helpers.ts:36).
+  status: collected
+- id: UF-41
+  source: starter-kits
+  kind: doc-drift
+  locations:
+  - ref: agents/openclaw/deployment/docs/installer-deployment.md:419-420
+    quote: '| gateway | 250m | 256Mi | 1Gi |'
+  summary: The installer resource table differs from the requests and limits the installer
+    sets.
+  evidence: claw-installer src/server/deployers/k8s-manifests.ts:875-878 sets the
+    gateway to 1Gi/250m requests and 4Gi/1 CPU limits; provider-plugins/openshift/templates/oauth-proxy-container.yaml:43-49
+    sets oauth-proxy to 64Mi/50m requests and 128Mi/200m limits (the doc says 100m
+    and 256Mi).
+  status: collected
+- id: UF-42
+  source: starter-kits
+  kind: doc-drift
+  locations:
+  - ref: agents/openclaw/deployment/docs/installer-deployment.md:395
+    quote: '| `OPENCLAW_GATEWAY_TOKEN` | Secret | generated | Gateway auth token (auto-generated
+      by installer) |'
+  summary: The installer doc says the gateway token lives in a Secret, but the installer
+    also writes it in plain text into the openclaw-config ConfigMap.
+  evidence: 'claw-installer src/server/deployers/k8s-helpers.ts:938 puts `auth: {
+    mode: "token", token: gatewayToken }` into the OpenClaw config, and k8s-manifests.ts:322-334
+    stores that config in ConfigMap openclaw-config. installer-deployment.md:309 also
+    lists the token only in the Secret.'
+  status: collected
+- id: UF-43
+  source: starter-kits
+  kind: missing-doc
+  locations:
+  - ref: agents/openclaw/deployment/docs/installer-deployment.md:438
+    quote: '| **Single replica only** |'
+  summary: The reason for one replica and the Recreate strategy (SQLite allows no
+    concurrent writers) is given only in the installer doc, although it applies to
+    the recommended raw manifests too.
+  evidence: manifests/04-deployment.yaml:8-10 sets replicas 1 and Recreate without
+    a comment, and docs/raw-deployment.md has no replica or HA statement.
+  status: collected
+- id: UF-44
+  source: starter-kits
+  kind: doc-drift
+  locations:
+  - ref: agents/openclaw/deployment/docs/installer-deployment.md:442
+    quote: consider `Retain` reclaim policy
+  summary: The PVC deletion row suggests a Retain reclaim policy, which is a PersistentVolume
+    or StorageClass setting, not a PVC setting.
+  evidence: A PVC has no reclaim policy; it is the bound PersistentVolume's persistentVolumeReclaimPolicy
+    (openclaw docs/install/kubernetes.md:190). Doc imprecision.
+  status: collected
+- id: UF-45
+  source: starter-kits
+  kind: doc-drift
+  locations:
+  - ref: agents/openclaw/deployment/docs/mlflow-tracing.md:170
+    quote: MLFLOW_ROUTE=$(oc get route mlflow -n redhat-ods-applications -o jsonpath='{.spec.host}')
+  - ref: docs/mlflow-openshift-auth-and-tls.md:29
+    quote: '| **URL pattern** | `https://mlflow-<ns>.apps.<cluster>/mlflow` | `https://mlflow.<ns>.svc:8443/mlflow`
+      |'
+  summary: The tracing docs reach MLflow through a Route named mlflow, which RHOAI
+    3.3.1 does not create.
+  evidence: On RHOAI 3.3.1 (live check during the guide run) `oc get route mlflow
+    -n redhat-ods-applications` returns NotFound; MLflow sits behind HTTPRoute `mlflow`
+    on Gateway openshift-ingress/data-science-gateway, whose OAuth proxy turns bearer-token
+    API calls away, as docs/llm-d-deployment.md:110 says for that gateway. Same at
+    mlflow-tracing.md:216 and mlflow-openshift-auth-and-tls.md:222-229.
+  status: collected
+- id: UF-46
+  source: starter-kits
+  kind: doc-drift
+  locations:
+  - ref: agents/openclaw/deployment/overlays/mlflow-tracing/rbac.yaml:4
+    quote: '# - RoleBinding: binds the operator-provided mlflow-integration ClusterRole'
+  - ref: agents/openclaw/deployment/docs/mlflow-tracing.md:129
+    quote: shipped by the MLflow operator
+  summary: The mlflow-integration ClusterRole is described as operator-provided, while
+    the same doc says RHOAI 3.3.1 does not ship it.
+  evidence: mlflow-tracing.md:129 says in the same bullet "RHOAI 3.3.1 does not ship
+    this role; create it from the definition in [RBAC Setup]".
+  status: collected
+- id: UF-47
+  source: starter-kits
+  kind: dead-config
+  locations:
+  - ref: agents/openclaw/deployment/overlays/mlflow-tracing/configmap-patch.yaml:64
+    quote: '"metrics": true,'
+  summary: The tracing overlay turns on OTel metrics, but the collector has only a
+    traces pipeline, so metric exports fail silently.
+  evidence: 'overlays/mlflow-tracing/otel-collector-config.yaml:63-67 defines only
+    a `traces:` pipeline; live, the collector answered POST /v1/metrics with 404 and
+    OpenClaw logged nothing. Fix: `metrics: false` or a metrics pipeline.'
+  status: collected
+- id: UF-48
+  source: starter-kits
+  kind: missing-doc
+  locations:
+  - ref: agents/openclaw/deployment/overlays/mlflow-tracing/configmap-patch.yaml:51
+    quote: '"allow": ["diagnostics-otel"],'
+  summary: The tracing overlay's exclusive plugin allowlist disables bundled plugins
+    such as device-pair, and the recipe does not mention it.
+  evidence: openclaw docs/tools/plugin.md:202-203 makes `plugins.allow` an exclusive
+    allowlist; doctor then warns "The device-pair plugin is not enabled; node onboarding
+    join codes and openclaw connect are unavailable." (src/commands/doctor-node-hosting-preconditions.ts:91).
+    Live, only three plugins loaded; Control UI login and pairing still worked.
+  status: collected
+- id: UF-49
+  source: starter-kits
+  kind: doc-drift
+  locations:
+  - ref: agents/openclaw/deployment/docs/mlflow-tracing.md:262
+    quote: when the gateway receives SIGUSR1
+  summary: Gap 4 says tracing breaks on a SIGUSR1 in-process restart, but OpenClaw
+    2026.9.8 restarts on SIGUSR2 and hot-reloads the OTel exporter.
+  evidence: 'openclaw docs/cli/gateway/restart-and-supervision.md:24: SIGUSR1 starts
+    the Node inspector and no longer restarts the gateway; docs/gateway/opentelemetry/setup.md:44-48
+    hot-reloads the exporter; CHANGELOG/2026.9.6.md:2126. Live, spans kept reaching
+    MLflow after a SIGUSR2 restart.'
+  status: collected
+- id: UF-50
+  source: starter-kits
+  kind: doc-drift
+  locations:
+  - ref: agents/openclaw/deployment/docs/mlflow-tracing.md:258
+    quote: '**No token usage in spans.**'
+  summary: Gap 2 says spans carry no token usage, while OpenClaw 2026.9.8 documents
+    and emits usage attributes.
+  evidence: openclaw docs/gateway/opentelemetry/spans-and-events.md:18-23,36 documents
+    `gen_ai.usage.*` on openclaw.model.call when the result carries usage and an openclaw.model.usage
+    span with `openclaw.tokens.*`; extensions/diagnostics-otel/src/service-genai-attributes.ts:149-152
+    sets them. Not verified live with vLLM responses.
+  status: collected
+- id: UF-51
+  source: starter-kits
+  kind: missing-doc
+  locations:
+  - ref: agents/openclaw/deployment/docs/mlflow-tracing.md:201-203
+    quote: node /app/dist/index.js config patch --stdin
+  summary: Patching the whole overlay config into a running gateway replaces the model
+    settings, and OpenClaw refuses it when the model ID differs; the doc mentions
+    neither this nor a dry run.
+  evidence: openclaw src/cli/config-cli-path.ts:506-517 refuses to replace `models.providers.vllm.models`
+    when IDs would be removed; `config patch --dry-run` previews the change (src/cli/config-cli.ts:436-440).
+  status: collected
+- id: UF-52
+  source: starter-kits
+  kind: missing-doc
+  locations:
+  - ref: agents/openclaw/deployment/overlays/mlflow-tracing/kustomization.yaml:6
+    quote: '- ../../manifests'
+  summary: The tracing overlay re-applies the base Secret and PVC, so placeholder
+    secrets overwrite a running deployment's values and the storage class falls back
+    to gp3-csi; the doc warns about neither.
+  evidence: The overlay includes ../../manifests, which contains manifests/01-secret.yaml:10-11
+    (placeholders) and manifests/03-pvc.yaml:12 (gp3-csi), and it has no PVC storage-class
+    patch (kustomization.yaml:13-24), unlike overlays/example/kustomization.yaml:18-24.
+    mlflow-tracing.md:148 asks to edit the Secret file without a warning. The immutable-PVC
+    apply failure is general Kubernetes knowledge, not verified here.
+  status: collected
+- id: UF-53
+  source: starter-kits
+  kind: doc-drift
+  locations:
+  - ref: agents/openclaw/deployment/docs/mlflow-tracing.md:171
+    quote: TOKEN=$(oc create token openclaw-tracing)
+  summary: The token command omits `-n` and depends on the current project, unlike
+    the neighboring commands.
+  evidence: The ServiceAccount is created in YOUR-NAMESPACE (mlflow-tracing.md:157),
+    and the following curl commands target that workspace; without `-n` the command
+    fails in another project. Minor.
+  status: collected
+- id: UF-54
+  source: starter-kits
+  kind: stale-reference
+  locations:
+  - ref: agents/openclaw/deployment/docs/mlflow-tracing.md:92
+    quote: '### Prototype trace data'
+  summary: The trace examples and screenshots show prototype data from the earlier
+    gpt-oss-120b test, while the doc's tested line names the October 2026 Qwen test.
+  evidence: mlflow-tracing.md:3 names the 2026-10-08 test with Qwen2.5-0.5B-Instruct;
+    :94-102 show traces from the earlier `vllm/gpt-oss-120b` test.
+  status: collected
+- id: UF-55
+  source: starter-kits
+  kind: dead-config
+  locations:
+  - ref: agents/openclaw/deployment/Containerfile.openshell:42
+    quote: WORKDIR /workspace
+  - ref: sandboxes/base/policy.yaml:15
+    quote: '- /workspace'
+  summary: The OpenShell flavor sets WORKDIR /workspace and the base policy grants
+    it read-write, but on Kubernetes OpenShell always uses /sandbox and /workspace
+    is not writable on OpenShift.
+  evidence: 'openshell docs/how-it-works/sandboxes/runtimes.mdx:268 (v0.1.2): "Podman,
+    Kubernetes, and MicroVM always use `/sandbox`."; the recipe''s own README.md:162
+    says `/workspace` is not writable on OpenShift.'
+  status: collected
+- id: UF-56
+  source: starter-kits
+  kind: doc-drift
+  locations:
+  - ref: sandboxes/base/README.md:9
+    quote: GID=0 for OpenShift arbitrary-UID
+  - ref: sandboxes/base/Containerfile:43
+    quote: '# Users: supervisor (system, non-login) and sandbox (interactive, GID=0
+      for OpenShift)'
+  summary: The base image designs the sandbox user with GID 0 for OpenShift, but under
+    OpenShell on OpenShift the driver assigns UID and GID from the namespace range,
+    so the GID 0 design does not apply there.
+  evidence: 'openshell docs/kubernetes/openshift.mdx:63-64 (v0.1.2): the driver reads
+    the namespace''s uid-range annotation and uses that UID/GID; agents/openclaw/deployment/README.md:162
+    confirms /workspace is not writable there.'
+  status: collected
+- id: UF-57
+  source: starter-kits
+  kind: dead-config
+  locations:
+  - ref: sandboxes/base/policy.yaml:22-24
+    quote: 'run_as_user: sandbox'
+  summary: The image policy sets process.run_as_user and run_as_group, which OpenShell
+    ignores on Kubernetes and applies on Docker and Podman only from the create-time
+    policy.
+  evidence: 'openshell docs/how-it-works/policies/schema.mdx:90-93 (v0.1.2): "Only
+    Docker and Podman apply these fields, and only from the policy that you pass when
+    you create the sandbox."'
+  status: collected
+- id: UF-58
+  source: starter-kits
+  kind: bug
+  locations:
+  - ref: sandboxes/base/policy.yaml:13-17
+    quote: 'read_write:'
+  summary: The base policy grants /tmp but not /var/tmp, so SQLite picks /var/tmp
+    and `openclaw agent exec` fails in the sandbox with "unable to open database file".
+  evidence: 'Live in an OpenShell 0.1.2 sandbox: /var/tmp has mode 1777, SQLite chooses
+    it, and Landlock denies it; the run worked with `--env SQLITE_TMPDIR=/tmp`. Fix:
+    add /var/tmp to read_write or set SQLITE_TMPDIR=/tmp or TMPDIR=/tmp in Containerfile.openshell.'
+  status: collected
+- id: UF-59
+  source: claw-installer
+  kind: bug
+  locations:
+  - ref: provider-plugins/openshift/src/openshift-deployer.ts:401-408
+    quote: '"umask 007 && exec node dist/index.js gateway run --bind loopback --port
+      18789",'
+  summary: The installer replaces the gateway command by default, so the image entrypoint's
+    `doctor --fix` state migration never runs on upgrades.
+  evidence: 'openclaw docs/install/docker.md:247-249: "a custom entrypoint bypasses
+    this activation step". The same replacement is at src/server/deployers/k8s-manifests.ts:861-863;
+    only the "Use image entrypoint" option keeps it.'
+  status: collected
+- id: UF-60
+  source: claw-installer
+  kind: bug
+  locations:
+  - ref: src/server/deployers/k8s-manifests.ts:631
+    quote: cp /config/openclaw.json ${OPENCLAW_RUNTIME_DIR}/openclaw.json
+  summary: The installer's init script copies `openclaw.json` from the ConfigMap on
+    every start, which overwrites runtime changes OpenClaw made to its own config.
+  evidence: starter-kits agents/openclaw/deployment/docs/troubleshooting.md:286 names
+    this copy-on-every-start behavior as the cause of clobbered config, and the starter-kits
+    manifests now seed the file only once (manifests/04-deployment.yaml:42-50).
+  status: collected
+- id: UF-61
+  source: claw-installer
+  kind: bug
+  locations:
+  - ref: src/server/deployers/k8s-manifests.ts:883
+    quote: '"require(''http'').get(''http://127.0.0.1:18789/'',r=>process.exit(r.statusCode<400?0:1)).on(''error'',()=>process.exit(1))",'
+  summary: The installer's liveness and readiness probes request `/` and accept any
+    status below 400, which the Control UI catch-all always satisfies.
+  evidence: 'openclaw docs/install/kubernetes.md:95: probes must assert the JSON probe
+    contract "because the Control UI answers unknown paths with a catch-all `200`";
+    the recommended paths are /readyz or /startupz and /healthz. Same probe at k8s-manifests.ts:895.'
+  status: collected
+- id: UF-62
+  source: claw-installer
+  kind: bug
+  locations:
+  - ref: src/server/deployers/k8s-helpers.ts:938
+    quote: 'auth: { mode: "token", token: gatewayToken },'
+  summary: The installer writes the gateway token in plain text into the openclaw-config
+    ConfigMap.
+  evidence: src/server/deployers/k8s-manifests.ts:322-334 serializes buildOpenClawConfig(config,
+    gatewayToken) into ConfigMap openclaw-config; ConfigMaps are not meant for secrets,
+    and the token is also in Secret openclaw-secrets.
+  status: collected
+- id: UF-63
+  source: claw-installer
+  kind: bug
+  locations:
+  - ref: src/server/deployers/k8s-helpers.ts:36
+    quote: '"ghcr.io/openclaw/openclaw:latest"'
+  - ref: src/server/deployers/k8s-manifests.ts:833
+    quote: 'image: "registry.access.redhat.com/ubi9-minimal:latest",'
+  summary: The installer deploys unpinned `:latest` images for the gateway and the
+    init container, so a redeploy can pull a different OpenClaw version.
+  evidence: The starter-kits raw manifests pin the 2026.9.8 digest (agents/openclaw/deployment/manifests/04-deployment.yaml:68).
+  status: collected
+- id: UF-64
+  source: claw-installer
+  kind: doc-drift
+  locations:
+  - ref: run.sh:240
+    quote: '# the built app from the container image and run it directly with Node.js.'
+  summary: The macOS comment says the launcher extracts the built app from the container
+    image, but from a clone it builds from source with npm.
+  evidence: run.sh:194-203 builds from source with `npm run build` or `npm ci && npm
+    run build` when package.json is present; extraction (:204-221) happens only without
+    a package.json.
+  status: collected
+- id: UF-65
+  source: openclaw
+  kind: naming-ux
+  locations:
+  - ref: src/cli/config-cli-path.ts:515
+    quote: Use --merge to merge by id or --replace to replace intentionally.
+  summary: The protected-path refusal tells `config patch` users to pass --merge or
+    --replace, options that `config patch` does not have.
+  evidence: src/cli/config-cli.ts:430-451 defines `config patch` with --replace-path
+    but no --merge or --replace (the same message is at config-cli-path.ts:502). docs/cli/config.md:221-232
+    documents the protection only for `config set`, and the `config patch` section
+    (:384-447) does not mention it.
+  status: collected
+- id: UF-66
+  source: openclaw
+  kind: doc-drift
+  locations:
+  - ref: docs/cli/config.md:594
+    quote: If the new payload fails schema validation or looks like a destructive
+      clobber, the active config is left alone and the rejected payload is saved beside
+      it as `openclaw.json.rejected.*`.
+  summary: The write-safety section says a rejected payload is saved for schema failures
+    too, but the code saves it only for clobber reasons.
+  evidence: src/config/io.write.ts:426-445 writes `<path>.rejected.<timestamp>` only
+    when blocking clobber reasons exist (see src/config/io.write-safety.ts:563-573);
+    docs/gateway/configuration.md:110-113 matches the code.
+  status: collected
+- id: UF-67
+  source: openclaw
+  kind: doc-drift
+  locations:
+  - ref: docs/gateway/configuration/hot-reload.md:194-195
+    quote: '`allowedOrigins` and'
+  summary: The hot-reload doc says `allowedOrigins` changes hot-apply, but removing
+    them with `null` on a gateway that started with allowedOrigins already set took
+    effect only after a restart.
+  evidence: 'Live (guide spec, "Origin removal", bind lan): the old origins stayed
+    until a restart. The statement holds when the gateway seeded loopback origins
+    at start (src/gateway/server-startup-bootstrap.ts:360-390, src/gateway/startup-control-ui-origins.ts:10-31);
+    the reload path for the other case (src/gateway/server-runtime-config.ts:111-122)
+    is not fully traced.'
+  status: collected
+- id: UF-68
+  source: openclaw
+  kind: missing-doc
+  locations:
+  - ref: docs/web/control-ui/connect-and-pair.md:15
+    quote: On the Gateway host, `openclaw dashboard` is the preferred owner path
+  summary: The pairing doc describes approval only on the Gateway host and has no
+    pointer for Kubernetes or container deployments, where approval runs inside the
+    pod.
+  evidence: connect-and-pair.md:15-46 covers `openclaw dashboard` and `openclaw devices
+    ...` on the host only; starter-kits fills the gap with `oc exec ... openclaw devices
+    approve` (agents/openclaw/deployment/docs/raw-deployment.md:195-196).
+  status: collected
+- id: UF-69
+  source: openclaw
+  kind: bug
+  locations:
+  - ref: src/process/spawn-broker/cleanup.ts:59
+    quote: process.kill(-pgid, value);
+  summary: Inside an OpenShell 0.1.2 sandbox, OpenClaw's process-group cleanup fails
+    with `kill EPERM`, so every in-process restart exits and leaves the sandbox in
+    Error.
+  evidence: 'Live in the guide run: SIGUSR2 and hybrid-mode restarts after restart-requiring
+    config changes exit 1, and `openshell sandbox start` recovers. Probable cause
+    (unverified): openshell architecture/sandbox.md:926 says the signal mediator "resolves
+    each positive target PID or TID", so a negative process-group target is denied.
+    May need an OpenShell issue too.'
+  status: collected
+- id: UF-70
+  source: openshell
+  kind: doc-drift
+  locations:
+  - ref: docs/kubernetes/openshift.mdx:88
+    quote: The steps above run the gateway over plaintext HTTP for quick evaluation.
+  summary: The OpenShift page says its steps run the gateway over plaintext HTTP,
+    but the chart default is TLS.
+  evidence: 'deploy/helm/openshell/values.yaml:327 sets `disableTls: false`. Confirmed
+    live during the guide run.'
+  status: collected
+- id: UF-71
+  source: openshell
+  kind: missing-doc
+  locations:
+  - ref: docs/upgrade/0-1-0.mdx:4
+    quote: 'title: "Upgrade to NVIDIA OpenShell 0.1.0"'
+  summary: The upgrade docs stop at 0.1.0 and have no note for 0.1.1 or 0.1.2, so
+    readers on 0.1.2 must infer that the 0.1.0 page still applies.
+  evidence: The pinned release is v0.1.2 (Helm chart 0.1.2); docs/upgrade/ contains
+    only the 0.1.0 page.
+  status: collected
+- id: UF-72
+  source: openshell
+  kind: missing-doc
+  locations:
+  - ref: docs/kubernetes/setup.mdx:55
+    quote: kubectl apply -f https://github.com/kubernetes-sigs/agent-sandbox/releases/latest/download/sandbox.yaml
+  summary: The setup docs install the Agent Sandbox controller from the unpinned latest
+    release, so a fresh install may get a version OpenShell 0.1.2 was not verified
+    against.
+  evidence: The guide run's cluster used Agent Sandbox v1.0.5 with OpenShell 0.1.2;
+    no OpenShell doc names a compatible Agent Sandbox version. The OpenShift install
+    applies the same latest manifest.
+  status: collected
