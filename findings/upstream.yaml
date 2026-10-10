@@ -13,7 +13,8 @@ findings:
     creates a separate supervisor Pod; inside the workload, architecture/compute-runtimes.md:389,393-395
     has openshell-sandbox override the image command. The only PID 1 statement in
     OpenShell is for the VM runtime (compute-runtimes.md:305).
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-2
   source: starter-kits
   kind: doc-drift
@@ -25,7 +26,8 @@ findings:
     OpenShell says to remove them before it.
   evidence: 'openshell docs/upgrade/0-1-0.mdx:27 (v0.1.2): "Remove 0.0.x sandboxes
     before the upgrade and recreate them afterward."'
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-3
   source: starter-kits
   kind: stale-reference
@@ -37,7 +39,8 @@ findings:
   evidence: 'agents/openclaw/deployment/docs/raw-deployment.md:3 says "Tested: 2026-10-08
     on OpenShift 4.22 with OpenClaw 2026.9.8"; the README line was not updated with
     that change.'
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-4
   source: starter-kits
   kind: doc-drift
@@ -52,7 +55,8 @@ findings:
     deploy/helm/openshell/templates/clusterrole.yaml:5-8) and needs the Agent Sandbox
     CRDs (docs/kubernetes/setup.mdx:50-58); claw-installer README.md:35-36 calls the
     OpenShell install cluster-admin work.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-5
   source: starter-kits
   kind: doc-drift
@@ -64,7 +68,8 @@ findings:
   evidence: agents/openclaw/deployment/manifests/04-deployment.yaml:21-64 defines
     the init-config init container and mounts the ConfigMap and the PVC; overlays/mlflow-tracing/deployment-patch.yaml:21-46
     adds the otel-collector sidecar.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-6
   source: starter-kits
   kind: doc-drift
@@ -77,7 +82,8 @@ findings:
     only the gateway token, although it also holds VLLM_API_KEY.
   evidence: agents/openclaw/deployment/manifests/01-secret.yaml:11 sets VLLM_API_KEY,
     and manifests/04-deployment.yaml:92-96 passes it to the gateway.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-7
   source: starter-kits
   kind: missing-doc
@@ -89,7 +95,8 @@ findings:
   evidence: agents/openclaw/deployment/docs/raw-deployment.md:65 edits manifests/02-configmap.yaml
     and :125 edits manifests/03-pvc.yaml; both ways work, but the README names only
     the overlay route.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-8
   source: starter-kits
   kind: doc-drift
@@ -102,7 +109,8 @@ findings:
     source is "a rootfs tar archive (`.tar`, `.tar.gz`, or `.tgz`) or a container
     image reference"; the tar is staged for the VM driver. Minor: the registry image
     path the recipe uses is correct.'
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-9
   source: starter-kits
   kind: missing-doc
@@ -117,7 +125,8 @@ findings:
     which stores /sandbox/.openclaw/openclaw.json on the sandbox volume. For API keys,
     openshell docs/how-it-works/inference.mdx:128-134 (v0.1.2) requires an imported
     provider profile per self-hosted endpoint.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-10
   source: starter-kits
   kind: doc-drift
@@ -232,7 +241,8 @@ findings:
     and Podman scripts, docker-compose.yml, docs, tests, and scripts/k8s/manifests/deployment.yaml,
     never in src/. Harmless (HOME gives the same path) but misleading. Low confidence
     that no build step reads it.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-19
   source: starter-kits
   kind: missing-doc
@@ -245,7 +255,8 @@ findings:
   evidence: 'openclaw scripts/k8s/manifests/deployment.yaml:154 sets `readOnlyRootFilesystem:
     true` with a /tmp emptyDir; the recipe''s manifests have no readOnlyRootFilesystem
     and no NetworkPolicy.'
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-20
   source: starter-kits
   kind: doc-drift
@@ -257,7 +268,8 @@ findings:
   evidence: raw-deployment.md:3 tests Qwen2.5-0.5B-Instruct, whose tested deployment
     runs `--tool-call-parser hermes` (confirmed live by the guide run). The prerequisite
     should name the parser per model family.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-21
   source: starter-kits
   kind: missing-doc
@@ -269,7 +281,8 @@ findings:
   evidence: For namespace-scoped users, `oc version` prints no `Server Version` line
     (observed live), so the check cannot confirm the "OpenShift 4.17+" prerequisite
     at raw-deployment.md:11 for the persona the recipe targets.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-22
   source: starter-kits
   kind: doc-drift
@@ -284,7 +297,8 @@ findings:
     between) and also prints `[gateway] spawn broker ready`, so a literal search for
     `[gateway] ready` (raw-deployment.md:237) fails; the doc's `grep -E "migrated|ready"`
     (:240) still matches.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-23
   source: starter-kits
   kind: missing-doc
@@ -296,7 +310,8 @@ findings:
     say that this replaces any origins added earlier.
   evidence: raw-deployment.md:205 states that arrays replace in a config patch, so
     the patch drops earlier entries; the doc does not warn about it.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-24
   source: starter-kits
   kind: doc-drift
@@ -314,7 +329,8 @@ findings:
     and docs/gateway/trusted-proxy-auth.md:93 limits the rejection to Gateway-authenticated
     routes. This also explains why only the /startupz probes fail when the cluster
     network is in trustedProxies. Wording, low priority.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-25
   source: starter-kits
   kind: missing-doc
@@ -326,7 +342,8 @@ findings:
   evidence: openclaw src/cli/config-cli-path.ts:506-517 refuses to replace `models.providers.<id>.models`
     when IDs would be removed; docs/cli/config.md:222 lists the protected paths and
     :441 documents `--replace-path`.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-26
   source: starter-kits
   kind: missing-doc
@@ -337,7 +354,8 @@ findings:
     doc covers rollback.
   evidence: raw-deployment.md ends with tracing and references (:243-253); `oc delete
     -k` for the raw path has no recipe source. Matches research gap G06.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-27
   source: starter-kits
   kind: doc-drift
@@ -356,7 +374,8 @@ findings:
     at troubleshooting.md:113 ("auto-generates its config on first start") predates
     the seed-once init container. The verification grep of `agent model` (:145) is
     written only at startup (openclaw src/gateway/server-startup-log.ts:117-128).
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-28
   source: starter-kits
   kind: stale-reference
@@ -367,7 +386,8 @@ findings:
     migrates to keyed `agents.entries`.
   evidence: openclaw docs/gateway/doctor/config-migrations.md:399 maps `agents.list`
     to keyed `agents.entries`, and docs/gateway/heartbeat.md:96 names `agents.entries.*.heartbeat.every`.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-29
   source: starter-kits
   kind: doc-drift
@@ -382,7 +402,8 @@ findings:
     ambient polls skip with `reason=no-route`") and :349 (the poll is skipped "before
     the agent runs"); the recipe sets `"channels": {}` (manifests/02-configmap.yaml:22).
     The entry should be scoped to deployments that set a heartbeat target or owner.'
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-30
   source: starter-kits
   kind: doc-drift
@@ -395,7 +416,8 @@ findings:
   evidence: troubleshooting.md:286 says manifests older than the 2026.9 update copied
     `openclaw.json` on every start, and manifests/04-deployment.yaml:42-50 now seeds
     it only once. The fix (:246-254) still deletes the PVC.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-31
   source: starter-kits
   kind: stale-reference
@@ -408,7 +430,8 @@ findings:
     in /home/node/.openclaw, and raw-deployment.md:221 backs up with `-C /home/node
     .openclaw`; claw-installer src/server/deployers/k8s-manifests.ts:38-40 uses the
     same layout.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-32
   source: starter-kits
   kind: doc-drift
@@ -419,7 +442,8 @@ findings:
     differ from the gateway's actual message.
   evidence: 'openclaw src/gateway/server/ws-connection/auth-messages.ts:79 returns
     "unauthorized: too many failed authentication attempts (retry later)". Low priority.'
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-33
   source: starter-kits
   kind: doc-drift
@@ -430,7 +454,8 @@ findings:
     numbered steps.
   evidence: troubleshooting.md:316-331 numbers steps 1, 2, and 3 under that heading.
     Minor.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-34
   source: starter-kits
   kind: doc-drift
@@ -588,7 +613,8 @@ findings:
     on Gateway openshift-ingress/data-science-gateway, whose OAuth proxy turns bearer-token
     API calls away, as docs/llm-d-deployment.md:110 says for that gateway. Same at
     mlflow-tracing.md:216 and mlflow-openshift-auth-and-tls.md:222-229.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-46
   source: starter-kits
   kind: doc-drift
@@ -639,7 +665,8 @@ findings:
     the Node inspector and no longer restarts the gateway; docs/gateway/opentelemetry/setup.md:44-48
     hot-reloads the exporter; CHANGELOG/2026.9.6.md:2126. Live, spans kept reaching
     MLflow after a SIGUSR2 restart.'
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-50
   source: starter-kits
   kind: doc-drift
@@ -652,7 +679,8 @@ findings:
     `gen_ai.usage.*` on openclaw.model.call when the result carries usage and an openclaw.model.usage
     span with `openclaw.tokens.*`; extensions/diagnostics-otel/src/service-genai-attributes.ts:149-152
     sets them. Not verified live with vLLM responses.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-51
   source: starter-kits
   kind: missing-doc
@@ -664,7 +692,8 @@ findings:
     neither this nor a dry run.
   evidence: openclaw src/cli/config-cli-path.ts:506-517 refuses to replace `models.providers.vllm.models`
     when IDs would be removed; `config patch --dry-run` previews the change (src/cli/config-cli.ts:436-440).
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-52
   source: starter-kits
   kind: missing-doc
@@ -691,7 +720,8 @@ findings:
   evidence: The ServiceAccount is created in YOUR-NAMESPACE (mlflow-tracing.md:157),
     and the following curl commands target that workspace; without `-n` the command
     fails in another project. Minor.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-54
   source: starter-kits
   kind: stale-reference
@@ -702,7 +732,8 @@ findings:
     gpt-oss-120b test, while the doc's tested line names the October 2026 Qwen test.
   evidence: mlflow-tracing.md:3 names the 2026-10-08 test with Qwen2.5-0.5B-Instruct;
     :94-102 show traces from the earlier `vllm/gpt-oss-120b` test.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-55
   source: starter-kits
   kind: dead-config
@@ -717,7 +748,8 @@ findings:
   evidence: 'openshell docs/how-it-works/sandboxes/runtimes.mdx:268 (v0.1.2): "Podman,
     Kubernetes, and MicroVM always use `/sandbox`."; the recipe''s own README.md:162
     says `/workspace` is not writable on OpenShift.'
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-56
   source: starter-kits
   kind: doc-drift
@@ -733,7 +765,8 @@ findings:
   evidence: 'openshell docs/kubernetes/openshift.mdx:63-64 (v0.1.2): the driver reads
     the namespace''s uid-range annotation and uses that UID/GID; agents/openclaw/deployment/README.md:162
     confirms /workspace is not writable there.'
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-57
   source: starter-kits
   kind: dead-config
@@ -746,7 +779,8 @@ findings:
   evidence: 'openshell docs/how-it-works/policies/schema.mdx:90-93 (v0.1.2): "Only
     Docker and Podman apply these fields, and only from the policy that you pass when
     you create the sandbox."'
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-58
   source: starter-kits
   kind: bug
@@ -758,7 +792,8 @@ findings:
   evidence: 'Live in an OpenShell 0.1.2 sandbox: /var/tmp has mode 1777, SQLite chooses
     it, and Landlock denies it; the run worked with `--env SQLITE_TMPDIR=/tmp`. Fix:
     add /var/tmp to read_write or set SQLITE_TMPDIR=/tmp or TMPDIR=/tmp in Containerfile.openshell.'
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 86a0326 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-59
   source: claw-installer
   kind: bug
@@ -844,7 +879,8 @@ findings:
     but no --merge or --replace (the same message is at config-cli-path.ts:502). docs/cli/config.md:221-232
     documents the protection only for `config set`, and the `config patch` section
     (:384-447) does not mention it.
-  status: collected
+  status: wont-file
+  decision: "Decided not to file (session 2026-10-10): scope limited to UF-71 for OpenShell/OpenClaw this round."
 - id: UF-66
   source: openclaw
   kind: doc-drift
@@ -858,7 +894,8 @@ findings:
   evidence: src/config/io.write.ts:426-445 writes `<path>.rejected.<timestamp>` only
     when blocking clobber reasons exist (see src/config/io.write-safety.ts:563-573);
     docs/gateway/configuration.md:110-113 matches the code.
-  status: collected
+  status: wont-file
+  decision: "Decided not to file (session 2026-10-10): scope limited to UF-71 for OpenShell/OpenClaw this round."
 - id: UF-67
   source: openclaw
   kind: doc-drift
@@ -873,7 +910,8 @@ findings:
     at start (src/gateway/server-startup-bootstrap.ts:360-390, src/gateway/startup-control-ui-origins.ts:10-31);
     the reload path for the other case (src/gateway/server-runtime-config.ts:111-122)
     is not fully traced.'
-  status: collected
+  status: wont-file
+  decision: "Decided not to file (session 2026-10-10): scope limited to UF-71 for OpenShell/OpenClaw this round."
 - id: UF-68
   source: openclaw
   kind: missing-doc
@@ -886,7 +924,8 @@ findings:
   evidence: connect-and-pair.md:15-46 covers `openclaw dashboard` and `openclaw devices
     ...` on the host only; starter-kits fills the gap with `oc exec ... openclaw devices
     approve` (agents/openclaw/deployment/docs/raw-deployment.md:195-196).
-  status: collected
+  status: wont-file
+  decision: "Decided not to file (session 2026-10-10): scope limited to UF-71 for OpenShell/OpenClaw this round."
 - id: UF-69
   source: openclaw
   kind: bug
@@ -901,7 +940,8 @@ findings:
     (unverified): openshell architecture/sandbox.md:926 says the signal mediator "resolves
     each positive target PID or TID", so a negative process-group target is denied.
     May need an OpenShell issue too.'
-  status: collected
+  status: wont-file
+  decision: "Decided not to file (session 2026-10-10): scope limited to UF-71 for OpenShell/OpenClaw this round."
 - id: UF-70
   source: openshell
   kind: doc-drift
@@ -912,7 +952,8 @@ findings:
     but the chart default is TLS.
   evidence: 'deploy/helm/openshell/values.yaml:327 sets `disableTls: false`. Confirmed
     live during the guide run.'
-  status: collected
+  status: wont-file
+  decision: "Decided not to file (session 2026-10-10): scope limited to UF-71 for OpenShell/OpenClaw this round."
 - id: UF-71
   source: openshell
   kind: missing-doc
@@ -923,7 +964,8 @@ findings:
     readers on 0.1.2 must infer that the 0.1.0 page still applies.
   evidence: The pinned release is v0.1.2 (Helm chart 0.1.2); docs/upgrade/ contains
     only the 0.1.0 page.
-  status: collected
+  status: filed
+  filed: https://github.com/NVIDIA/OpenShell/issues/4398
 - id: UF-72
   source: openshell
   kind: missing-doc
@@ -936,4 +978,5 @@ findings:
   evidence: The guide run's cluster used Agent Sandbox v1.0.5 with OpenShell 0.1.2;
     no OpenShell doc names a compatible Agent Sandbox version. The OpenShift install
     applies the same latest manifest.
-  status: collected
+  status: wont-file
+  decision: "Decided not to file (session 2026-10-10): scope limited to UF-71 for OpenShell/OpenClaw this round."
