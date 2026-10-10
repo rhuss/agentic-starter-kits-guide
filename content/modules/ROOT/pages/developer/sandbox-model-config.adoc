@@ -1,5 +1,209 @@
 = Configure the model inside the sandbox
-:guide-no-sources:
 
-// STUB
-This page is not written yet.
+// Sources:
+// starter-kits:agents/openclaw/deployment/README.md:128-130
+// starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:23-50
+// starter-kits:sandboxes/base/policy.yaml:13-17
+// openshell:docs/kubernetes/setup.mdx:21-32
+// openshell:docs/about/architecture.mdx:30-32,46-47,100-104
+// openshell:crates/openshell-cli/src/main.rs:1553-1557,1584-1593,1644-1715
+// openshell:docs/how-it-works/sandboxes/overview.mdx:293-312,763-784,847-869
+// openshell:docs/how-it-works/providers/overview.mdx:11,107-110,136-142,364-377,475-480
+// openshell:docs/how-it-works/inference.mdx:128-134
+// openclaw:docs/cli/config.md:117-119,136-140,384-400,575-581
+// openclaw:docs/providers/vllm.md:9-17,36-41,87-115
+// openclaw:docs/cli/agent.md:26-36,369
+// openclaw:docs/gateway/configuration/hot-reload.md:60-64,89-92,117-120,246
+// openclaw:docs/cli/gateway/restart-and-supervision.md:23-25,46-50
+// openclaw:src/gateway/call-device-auth.ts:37-53
+// url:https://www.sqlite.org/tempfiles.html
+
+xref:developer/run-in-sandbox.adoc[Run OpenClaw in an OpenShell sandbox] ends with a gateway that runs unconfigured and an egress rule for your model endpoint.
+This page gives that gateway a model provider and shows which kinds of restart the configuration survives.
+It assumes the sandbox `openclaw` from that page is in the `Ready` phase, with the gateway as its main process and the `model_endpoint` rule in place.
+
+== Where the configuration lives
+
+OpenClaw reads its configuration from `openclaw.json` in its state directory, and `openclaw config file` prints the active path.
+In the sandbox the home directory is `/sandbox`, so the file is `/sandbox/.openclaw/openclaw.json`.
+On Kubernetes, a PersistentVolumeClaim keeps `/sandbox` across Pod restarts.
+Anything OpenClaw writes there stays with the sandbox until you delete it.
+
+You don't need a shell in the sandbox to write the file.
+`openshell sandbox exec` runs one command in the running sandbox, passes piped input to it, and returns its exit code.
+The command runs in the workload Pod next to the gateway.
+Its network traffic takes the same path as the gateway's: through the supervisor, which runs in its own Pod and opens a connection only when the sandbox policy allows it.
+
+== Write the provider configuration
+
+OpenClaw's `config patch` command merges a JSON5 patch into `openclaw.json`, and its `--stdin` option reads the patch from piped input.
+Together with `openshell sandbox exec`, that lets you configure the gateway from your workstation.
+The patch below follows the model section of the recipe's ConfigMap and OpenClaw's explicit vLLM configuration.
+
+. Save the provider settings in a local file named `model.patch.json5`.
+Replace `<model-host>`, `<port>`, and `<model-id>` with your endpoint's values.
+The `id` must be the model ID the endpoint serves, and `agents.defaults.model` is `vllm/` followed by that ID.
++
+[source,json5]
+----
+{
+  agents: {
+    defaults: {
+      model: "vllm/<model-id>",
+    },
+  },
+  models: {
+    mode: "replace",
+    providers: {
+      vllm: {
+        baseUrl: "http://<model-host>:<port>/v1",
+        api: "openai-completions",
+        apiKey: "not-needed",
+        models: [
+          {
+            id: "<model-id>",
+            name: "<model-id>",
+            reasoning: false,
+            input: ["text"],
+            contextWindow: 32768,
+            maxTokens: 4096,
+          },
+        ],
+      },
+    },
+  },
+}
+----
++
+`apiKey` holds a stand-in value for an endpoint that does not check keys; OpenClaw's vLLM provider accepts any non-empty value in that case.
+The host and port in `baseUrl` must match the endpoint of the `model_endpoint` rule, or the supervisor refuses the connection.
+
+. Pipe the patch into `openclaw config patch` inside the sandbox.
++
+Check: OpenClaw applies the patch and reports that the gateway picks it up without a restart.
++
+[source,bash]
+----
+openshell sandbox exec -n openclaw --no-tty -- openclaw config patch --stdin < model.patch.json5
+----
+// expect: contains "Change will apply without restarting the gateway."
++
+Changes under `agents` and `models` hot-apply, so the running gateway uses the new provider right away.
+
+. Read the model reference back.
++
+Check: the default model points at the `vllm` provider.
++
+[source,bash]
+----
+openshell sandbox exec -n openclaw --no-tty -- openclaw config get agents.defaults.model
+----
+// expect: contains "vllm/"
+
+== Run a test turn
+
+`openclaw agent exec` runs one embedded agent turn with your ordinary configuration and a temporary state directory.
+It tests the provider and the egress rule without going through the gateway.
+`openclaw agent --local` doesn't work for this check, because it needs exclusive ownership of the state directory and refuses to start while the gateway holds it.
+
+. Run one turn against the configured model.
++
+Check: the JSON result reports success and names the `vllm` provider.
++
+[source,bash]
+----
+openshell sandbox exec -n openclaw --no-tty --env SQLITE_TMPDIR=/tmp -- \
+  openclaw agent exec "Reply with the single word: pong" --json
+----
+// expect: matches /"ok": true/ and matches /"provider": "vllm"/
++
+The turn needs `SQLITE_TMPDIR=/tmp`.
+SQLite puts its temporary files in the first of `/var/tmp`, `/usr/tmp`, and `/tmp` whose permission bits allow writing.
+The image policy grants write access to `/tmp` but not to `/var/tmp`, so without the variable the turn fails with `unable to open database file`.
+
+[NOTE]
+====
+A gateway-backed `openclaw agent` turn started through `sandbox exec` does not reach the gateway.
+The CLI asks for gateway credentials and stops with `requires credentials before opening a websocket`, although the gateway runs with `--auth none`.
+Use `agent exec` for the check, or the Control UI through the port forward.
+====
+
+== What a restart keeps
+
+OpenShell starts the sandbox's main process once and does not restart it when it exits.
+An exit with code 0 leaves the sandbox in `Completed`, and any other exit leaves it in `Error` with the reason `MainProcessFailed`.
+Starting a sandbox in either phase launches a fresh instance of its main process.
+
+The configuration on `/sandbox` survives each of these cases:
+
+* *Hot-reloaded changes:* settings under `agents` and `models` apply while the gateway keeps running, so the provider configuration needs no restart at all.
+* *Changes that need a gateway restart:* `config set` and `config patch` answer these with a hint to restart the gateway, for example after a change of `gateway.auth.mode`.
+In the default `hybrid` reload mode the gateway then restarts itself in process with `SIGUSR2`.
+Inside the sandbox that in-process restart fails: the shutdown step logs `Spawn broker cleanup did not complete` with `kill EPERM`, the gateway exits with status 1, and the sandbox moves to `Error`.
+A manual `SIGUSR2` to the gateway ends the same way.
+`openshell sandbox start` brings it back with the saved configuration.
+* *Stop and start:* `openshell sandbox stop` removes the compute and keeps the workspace, and `openshell sandbox start` creates the compute again.
+The configuration, the policy with the `model_endpoint` rule, and the other sandbox settings stay with the sandbox.
+
+[WARNING]
+====
+A configuration change that needs a gateway restart takes the sandbox down.
+Make such changes on purpose, and follow them with `openshell sandbox start openclaw`, or stop and start the sandbox yourself.
+====
+
+To restart the gateway with a clean process, stop and start the sandbox.
+
+. Stop the sandbox.
+Stopping it also ends the local background forward.
++
+[source,bash]
+----
+openshell sandbox stop openclaw
+----
+
+. Start it again.
++
+[source,bash]
+----
+openshell sandbox start openclaw
+----
++
+Check: the provider configuration is still there.
++
+[source,bash]
+----
+openshell sandbox exec -n openclaw --no-tty -- openclaw config get models.providers.vllm.baseUrl
+----
+// expect: contains "/v1"
++
+Check: the egress rule is still active.
++
+[source,bash]
+----
+openshell sandbox get openclaw --policy-only
+----
+// expect: contains "model_endpoint"
+
+. Restart the port forward if you use the Control UI.
++
+[source,bash]
+----
+openshell forward start 18789 openclaw --background
+----
+
+If the gateway has already exited and `openshell sandbox list` shows the sandbox in `Error`, skip the stop and run only `openshell sandbox start openclaw`.
+
+== If the endpoint needs an API key
+
+The steps above cover an endpoint without authentication.
+For one that checks keys, don't pass the key with `--env` on `sandbox create` or `sandbox exec`.
+The CLI reserves `--env` for non-secret values and points to providers for API keys and tokens.
+
+OpenShell's mechanism for secrets is a provider.
+The sandbox receives only a placeholder in its environment, and OpenShell's proxy replaces the placeholder with the real value in an HTTP request to an endpoint that the provider's profile covers.
+Every provider needs an imported profile.
+A self-hosted endpoint needs its own profile that names its host, port, credential, and allowed binaries, because the example profiles for public vendors bind their credentials to the vendors' hosts.
+OpenClaw's vLLM provider reads its key from the `VLLM_API_KEY` environment variable.
+
+This guide has not tested a provider with OpenClaw in the sandbox.
+Read the OpenShell documentation on providers and inference access before you rely on it.

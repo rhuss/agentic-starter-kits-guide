@@ -163,6 +163,11 @@ rules:
       - '/usr/local/bin/node'
       - '/workspace'
       - '^Check:'
+  - glob: "content/modules/ROOT/pages/developer/sandbox-model-config.adoc"
+    require:
+      - 'openshell '
+      - 'openclaw '
+      - '(?i)restart'
   - glob: "content/modules/ROOT/pages/developer/extend.adoc"
     require:
       - 'kustomization\.yaml'
