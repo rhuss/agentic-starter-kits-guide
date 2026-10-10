@@ -6,7 +6,7 @@
 // starter-kits:sandboxes/base/policy.yaml:13-17
 // openshell:docs/kubernetes/setup.mdx:21-32
 // openshell:docs/about/architecture.mdx:30-32,46-47,100-104
-// openshell:crates/openshell-cli/src/main.rs:1553-1557,1584-1593,1644-1715
+// openshell:crates/openshell-cli/src/main.rs:1553-1557,1584-1593,1600-1602,1644-1715,2288-2301
 // openshell:docs/how-it-works/sandboxes/overview.mdx:293-312,763-784,847-869
 // openshell:docs/how-it-works/providers/overview.mdx:11,107-110,136-142,364-377,475-480
 // openshell:docs/how-it-works/inference.mdx:128-134
@@ -24,7 +24,7 @@ It assumes the sandbox `openclaw` from that page is in the `Ready` phase, with t
 
 == Where the configuration lives
 
-OpenClaw reads its configuration from `openclaw.json` in its state directory, and `openclaw config file` prints the active path.
+OpenClaw reads its configuration from `openclaw.json` in `~/.openclaw/`, and `openclaw config file` prints the active path.
 In the sandbox the home directory is `/sandbox`, so the file is `/sandbox/.openclaw/openclaw.json`.
 On Kubernetes, a PersistentVolumeClaim keeps `/sandbox` across Pod restarts.
 Anything OpenClaw writes there stays with the sandbox until you delete it.
@@ -118,14 +118,14 @@ openshell sandbox exec -n openclaw --no-tty --env SQLITE_TMPDIR=/tmp -- \
 // expect: matches /"ok": true/ and matches /"provider": "vllm"/
 +
 The turn needs `SQLITE_TMPDIR=/tmp`.
-SQLite puts its temporary files in the first of `/var/tmp`, `/usr/tmp`, and `/tmp` whose permission bits allow writing.
+SQLite uses the first of `SQLITE_TMPDIR`, `TMPDIR`, `/var/tmp`, `/usr/tmp`, and `/tmp` that exists and has the write and execute bits set.
 The image policy grants write access to `/tmp` but not to `/var/tmp`, so without the variable the turn fails with `unable to open database file`.
 
 [NOTE]
 ====
 A gateway-backed `openclaw agent` turn started through `sandbox exec` does not reach the gateway.
 The CLI asks for gateway credentials and stops with `requires credentials before opening a websocket`, although the gateway runs with `--auth none`.
-Use `agent exec` for the check, or the Control UI through the port forward.
+Use `agent exec` for the check.
 ====
 
 == What a restart keeps
@@ -139,7 +139,7 @@ The configuration on `/sandbox` survives each of these cases:
 * *Hot-reloaded changes:* settings under `agents` and `models` apply while the gateway keeps running, so the provider configuration needs no restart at all.
 * *Changes that need a gateway restart:* `config set` and `config patch` answer these with a hint to restart the gateway, for example after a change of `gateway.auth.mode`.
 In the default `hybrid` reload mode the gateway then restarts itself in process with `SIGUSR2`.
-Inside the sandbox that in-process restart fails: the shutdown step logs `Spawn broker cleanup did not complete` with `kill EPERM`, the gateway exits with status 1, and the sandbox moves to `Error`.
+On OpenShell {openshell-version} on Kubernetes, as tested for this guide, that in-process restart fails inside the sandbox: the shutdown step logs `Spawn broker cleanup did not complete` with `kill EPERM`, the gateway exits with status 1, and the sandbox moves to `Error`.
 A manual `SIGUSR2` to the gateway ends the same way.
 `openshell sandbox start` brings it back with the saved configuration.
 * *Stop and start:* `openshell sandbox stop` removes the compute and keeps the workspace, and `openshell sandbox start` creates the compute again.
@@ -147,8 +147,8 @@ The configuration, the policy with the `model_endpoint` rule, and the other sand
 
 [WARNING]
 ====
-A configuration change that needs a gateway restart takes the sandbox down.
-Make such changes on purpose, and follow them with `openshell sandbox start openclaw`, or stop and start the sandbox yourself.
+In the default `hybrid` reload mode, a configuration change that needs a gateway restart takes the sandbox down.
+Make such changes on purpose, and follow them with `openshell sandbox start openclaw`.
 ====
 
 To restart the gateway with a clean process, stop and start the sandbox.
@@ -201,7 +201,7 @@ The CLI reserves `--env` for non-secret values and points to providers for API k
 
 OpenShell's mechanism for secrets is a provider.
 The sandbox receives only a placeholder in its environment, and OpenShell's proxy replaces the placeholder with the real value in an HTTP request to an endpoint that the provider's profile covers.
-Every provider needs an imported profile.
+A provider that holds an API key needs an imported profile.
 A self-hosted endpoint needs its own profile that names its host, port, credential, and allowed binaries, because the example profiles for public vendors bind their credentials to the vendors' hosts.
 OpenClaw's vLLM provider reads its key from the `VLLM_API_KEY` environment variable.
 
