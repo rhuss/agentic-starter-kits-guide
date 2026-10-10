@@ -55,9 +55,9 @@ internal:
 # the kubeconfig content is never read into the project. Set disposable: true only
 # for a throwaway cluster; it unlocks the full (mutating) validation tier.
 clusters:
-  cntbh:
+  dev-cluster:
     kubeconfig: ~/.kube/config
-    context: default/api-cluster-cntbh-dyn-redhatworkshops-io:6443/admin
+    context: default/api-dev-cluster:6443/admin
     disposable: true
 
 # Extra read-only command patterns for /guide:validate (additive only).

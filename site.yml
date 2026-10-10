@@ -4,6 +4,7 @@
 # playbook that tools/guide/playbook.py generates from this file instead (build/).
 site:
   title: "OpenClaw on OpenShift"
+  url: https://rhuss.github.io/agentic-starter-kits-guide
   start_page: guide::index.adoc
 content:
   sources:

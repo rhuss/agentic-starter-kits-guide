@@ -53,12 +53,12 @@ claims:
     kind: label
     elements: [t_ns]
     text: One OpenShift namespace holds the gateway and the sandbox resources (the gateway may also run in a separate namespace).
-    sources: ["openshell:docs/kubernetes/setup.mdx:21-26,242", "live:oc -n openshell-test get statefulset,sandboxes.agents.x-k8s.io,svc,networkpolicy on cluster cntbh, 2026-10-10: statefulset/openshell, Sandbox default--oc-gw, Services os-boundary-*, NetworkPolicies openshell-sandbox-* share namespace openshell-test"]
+    sources: ["openshell:docs/kubernetes/setup.mdx:21-26,242", "live:oc -n openshell-test get statefulset,sandboxes.agents.x-k8s.io,svc,networkpolicy on cluster dev-cluster, 2026-10-10: statefulset/openshell, Sandbox default--oc-gw, Services os-boundary-*, NetworkPolicies openshell-sandbox-* share namespace openshell-test"]
   - id: ns-contents
     kind: contains
     elements: [ns, gateway, wl, sup, netpol]
     text: The gateway, the workload pod, the separate supervisor pod, and the NetworkPolicy live in the namespace.
-    sources: ["openshell:docs/kubernetes/setup.mdx:21-30,242", "openshell:docs/about/architecture.mdx:100-104", "live:oc -n openshell-test get statefulset,sandboxes.agents.x-k8s.io,networkpolicy on cluster cntbh, 2026-10-10: statefulset/openshell, Sandbox default--oc-gw, NetworkPolicies openshell-sandbox-supervisors, openshell-sandbox-workloads, openshell-sandbox-ssh"]
+    sources: ["openshell:docs/kubernetes/setup.mdx:21-30,242", "openshell:docs/about/architecture.mdx:100-104", "live:oc -n openshell-test get statefulset,sandboxes.agents.x-k8s.io,networkpolicy on cluster dev-cluster, 2026-10-10: statefulset/openshell, Sandbox default--oc-gw, NetworkPolicies openshell-sandbox-supervisors, openshell-sandbox-workloads, openshell-sandbox-ssh"]
   - id: gateway-label
     kind: label
     elements: [gateway]
@@ -68,7 +68,7 @@ claims:
     kind: label
     elements: [netpol]
     text: A NetworkPolicy gives the workload no egress and admits only the supervisor to the boundary port 5500.
-    sources: ["openshell:docs/kubernetes/setup.mdx:29-30", "openshell:docs/about/architecture.mdx:31,90-92,104", "live:oc -n openshell-test get networkpolicy openshell-sandbox-workloads -o jsonpath={.spec} on cluster cntbh, 2026-10-10: selects boundary-role=workload, policyTypes Ingress and Egress, no egress rules, ingress only from boundary-role=supervisor on TCP 5500"]
+    sources: ["openshell:docs/kubernetes/setup.mdx:29-30", "openshell:docs/about/architecture.mdx:31,90-92,104", "live:oc -n openshell-test get networkpolicy openshell-sandbox-workloads -o jsonpath={.spec} on cluster dev-cluster, 2026-10-10: selects boundary-role=workload, policyTypes Ingress and Egress, no egress rules, ingress only from boundary-role=supervisor on TCP 5500"]
 
   # --- frame: Sandbox workload pod (wl), nested in ns ---
   - id: wl-title
@@ -80,12 +80,12 @@ claims:
     kind: contains
     elements: [wl, sbx, openclaw, imgpolicy]
     text: The workload pod runs openshell-sandbox as its container command, which runs openclaw gateway; the image policy ships in the workload image. No supervisor runs in this pod.
-    sources: ["openshell:docs/about/architecture.mdx:46-47,100-104", "openshell:architecture/compute-runtimes.md:389,393-395", "openshell:docs/how-it-works/policies/manage-policies.mdx:40-52", "starter-kits:sandboxes/base/Containerfile:58-60", "live:oc -n openshell-test get sandboxes.agents.x-k8s.io default--oc-gw -o jsonpath on cluster cntbh, 2026-10-10: only container agent, command /.openshell/runtime/openshell-sandbox --bootstrap /.openshell/state/bootstrap/boundary.json, image openclaw-sandbox flavor image"]
+    sources: ["openshell:docs/about/architecture.mdx:46-47,100-104", "openshell:architecture/compute-runtimes.md:389,393-395", "openshell:docs/how-it-works/policies/manage-policies.mdx:40-52", "starter-kits:sandboxes/base/Containerfile:58-60", "live:oc -n openshell-test get sandboxes.agents.x-k8s.io default--oc-gw -o jsonpath on cluster dev-cluster, 2026-10-10: only container agent, command /.openshell/runtime/openshell-sandbox --bootstrap /.openshell/state/bootstrap/boundary.json, image openclaw-sandbox flavor image"]
   - id: sbx-label
     kind: label
     elements: [sbx]
     text: openshell-sandbox replaces the image command, owns the agent as its child, and applies Landlock and seccomp.
-    sources: ["openshell:docs/about/architecture.mdx:30,46-50", "openshell:architecture/compute-runtimes.md:389,393-395", "live:oc -n openshell-test get sandboxes.agents.x-k8s.io default--oc-gw on cluster cntbh, 2026-10-10: container command /.openshell/runtime/openshell-sandbox --bootstrap /.openshell/state/bootstrap/boundary.json"]
+    sources: ["openshell:docs/about/architecture.mdx:30,46-50", "openshell:architecture/compute-runtimes.md:389,393-395", "live:oc -n openshell-test get sandboxes.agents.x-k8s.io default--oc-gw on cluster dev-cluster, 2026-10-10: container command /.openshell/runtime/openshell-sandbox --bootstrap /.openshell/state/bootstrap/boundary.json"]
   - id: openclaw-label
     kind: label
     elements: [openclaw]
@@ -129,7 +129,7 @@ claims:
     kind: connects
     elements: [a_pull]
     text: The workload pod's agent container runs the --from image pulled from the registry.
-    sources: ["openshell:docs/how-it-works/sandboxes/overview.mdx:158-160,183-184", "starter-kits:agents/openclaw/deployment/README.md:116-130", "live:oc -n openshell-test get sandboxes.agents.x-k8s.io default--oc-gw on cluster cntbh, 2026-10-10: container agent image is the openclaw-sandbox flavor image from a registry"]
+    sources: ["openshell:docs/how-it-works/sandboxes/overview.mdx:158-160,183-184", "starter-kits:agents/openclaw/deployment/README.md:116-130", "live:oc -n openshell-test get sandboxes.agents.x-k8s.io default--oc-gw on cluster dev-cluster, 2026-10-10: container agent image is the openclaw-sandbox flavor image from a registry"]
   - id: create
     kind: connects
     elements: [a_create]
@@ -149,7 +149,7 @@ claims:
     kind: connects
     elements: [a_wl]
     text: The gateway's driver creates a Sandbox resource; the Agent Sandbox controller creates the workload pod from it.
-    sources: ["openshell:docs/kubernetes/setup.mdx:21-23,50-58", "live:oc -n openshell-test get sandboxes.agents.x-k8s.io on cluster cntbh, 2026-10-10: Sandbox default--oc-gw holds the workload pod template"]
+    sources: ["openshell:docs/kubernetes/setup.mdx:21-23,50-58", "live:oc -n openshell-test get sandboxes.agents.x-k8s.io on cluster dev-cluster, 2026-10-10: Sandbox default--oc-gw holds the workload pod template"]
   - id: make-supervisor
     kind: connects
     elements: [a_sup]
@@ -164,7 +164,7 @@ claims:
     kind: connects
     elements: [a_dial]
     text: The supervisor dials into the workload over mutual TLS through the boundary Service on port 5500.
-    sources: ["openshell:docs/kubernetes/setup.mdx:23-24,28", "openshell:docs/about/architecture.mdx:57-60,104,126", "live:oc -n openshell-test get svc on cluster cntbh, 2026-10-10: Services os-boundary-<id> on 5500/TCP select openshell.ai/boundary-role=workload"]
+    sources: ["openshell:docs/kubernetes/setup.mdx:23-24,28", "openshell:docs/about/architecture.mdx:57-60,104,126", "live:oc -n openshell-test get svc on cluster dev-cluster, 2026-10-10: Services os-boundary-<id> on 5500/TCP select openshell.ai/boundary-role=workload"]
   - id: egress-hop1
     kind: connects
     elements: [a_egress1]

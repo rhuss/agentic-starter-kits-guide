@@ -6,7 +6,7 @@
 
 **Architecture:** Task 1 creates every page as a stub and the full navigation, so cross-references resolve from the start. Each later task replaces one stub (or draws one diagram) following `page-procedure.md` or the `guide:diagrams` skill; diagram tasks precede the pages that show them.
 
-**Tech Stack:** Antora 3.2 (AsciiDoc), cc-guide toolkit (`make check`, `tools/guide/*.py`), Excalidraw MCP for diagrams, `oc` against cluster cntbh for live checks.
+**Tech Stack:** Antora 3.2 (AsciiDoc), cc-guide toolkit (`make check`, `tools/guide/*.py`), Excalidraw MCP for diagrams, `oc` against cluster dev-cluster for live checks.
 
 **Spec:** `docs/guide/spec.md` (research and live results: `.guide/runs/2026-10-08-create/research.md`, local only).
 
@@ -40,7 +40,7 @@
 - Commit messages end with the trailer `Assisted-By: 🤖 Claude Code`. Only the controller pushes, and only when the author opted in (local commits only).
 - Navigation (`content/modules/ROOT/nav.adoc`) has five titled lists in this order: `.Overview`, `.Administrator guide`, `.User guide`, `.Developer guide`, `.Reference`. Task 1 creates all entries; page tasks only fix an entry's link text when the page title changes.
 - Commands that run OpenClaw's CLI inside the pod use the recipe's form `oc exec [-i] deployment/openclaw -c gateway -n my-openclaw -- node /app/dist/index.js <command>`. Examples use the namespace `my-openclaw`, as the recipe docs do. Never put a real token, password, API key, or cluster host name on a page; use placeholders such as `<gateway-token>` and `<route-host>`.
-- Live checks: cluster `cntbh` is the current `oc` context and registered as disposable. Implementers may run read-only commands (`oc get`, `oc describe`, `oc logs`, `oc exec ... config get`, `devices list`, `helm list`, `openshell status`) in the namespaces `openclaw-fresh`, `openclaw-test`, `openclaw-model`, `openshell-test`, `openshell-agents`, and `redhat-ods-applications`; mutating commands only where a task says so. The OpenShell CLI always targets the cluster gateway with `-g openshell-test`; never change the CLI's active gateway. A live result can support a page statement only together with a pinned source for the command or setting it uses; record live runs in the task report.
+- Live checks: cluster `dev-cluster` is the current `oc` context and registered as disposable. Implementers may run read-only commands (`oc get`, `oc describe`, `oc logs`, `oc exec ... config get`, `devices list`, `helm list`, `openshell status`) in the namespaces `openclaw-fresh`, `openclaw-test`, `openclaw-model`, `openshell-test`, `openshell-agents`, and `redhat-ods-applications`; mutating commands only where a task says so. The OpenShell CLI always targets the cluster gateway with `-g openshell-test`; never change the CLI's active gateway. A live result can support a page statement only together with a pinned source for the command or setting it uses; record live runs in the task report.
 - The live verification table in `docs/guide/spec.md` ("Live verification results") is binding: where it contradicts a recipe document, pages follow the table and cite the code location; the task report lists the contradicted document as an Upstream candidate.
 - Tested environment statements: the recipe's own tested lines come from `starter-kits` docs; the guide's model line (gpt-oss-20b on vLLM with a GPU) is stated only on `reference/model-compatibility` and `user/first-chat`.
 

@@ -35,7 +35,7 @@ claims:
     text: The ConfigMap is mounted into the init container at /config.
     sources:
       - "starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:51-53,134-137"
-      - "live:oc get deployment openclaw -n openclaw-fresh -o jsonpath (initContainers volumeMounts, volumes), cluster cntbh, 2026-10-10: init-config mounts config at /config"
+      - "live:oc get deployment openclaw -n openclaw-fresh -o jsonpath (initContainers volumeMounts, volumes), cluster dev-cluster, 2026-10-10: init-config mounts config at /config"
   - id: l1-init
     kind: label
     elements: [l1_init]
@@ -113,7 +113,7 @@ claims:
     text: (Crossed arrow, ends on the gateway process box) the ConfigMap does not reach the running gateway; the gateway container mounts only the PVC.
     sources:
       - "starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:97-99,134-140"
-      - "live:oc get deployment openclaw -n openclaw-fresh -o jsonpath (containers volumeMounts), cluster cntbh, 2026-10-10: gateway mounts only data at /home/node"
+      - "live:oc get deployment openclaw -n openclaw-fresh -o jsonpath (containers volumeMounts), cluster dev-cluster, 2026-10-10: gateway mounts only data at /home/node"
   - id: l2-configmap
     kind: label
     elements: [l2_configmap]
