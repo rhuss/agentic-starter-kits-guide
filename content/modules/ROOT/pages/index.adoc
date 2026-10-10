@@ -55,8 +55,9 @@ The agent never sees real credentials, either: OpenShell adds them only to reque
 
 === vLLM
 
-https://docs.vllm.ai/en/latest/[vLLM] is a library for running large language models and serving them through an OpenAI-compatible API.
-The recipe is set up for vLLM, and it accepts other OpenAI-compatible endpoints too, such as a model served through KServe or an external provider's API.
+https://docs.vllm.ai/en/latest/[vLLM] runs large language models and serves them through an OpenAI-compatible API.
+In this recipe it runs as its own model server that OpenClaw reaches over the network, and the recipe does not deploy it for you.
+The setup is built for vLLM, and it accepts other OpenAI-compatible endpoints too, such as a model served through KServe or an external provider's API.
 
 == How they fit together
 
@@ -71,12 +72,12 @@ On the second path, the same OpenClaw runs inside an OpenShell sandbox on the cl
 Here the policy check earns its keep: an OpenShell supervisor outside the sandbox checks every request against the policy, and the default denies all network egress.
 OpenClaw reaches your model only after you add a policy rule for that endpoint.
 
-Why put these three together?
-OpenClaw sends your prompts to the model provider you configure, and in this guide's setup that provider is your own vLLM server rather than an outside service.
-OpenClaw can run the agent's commands apart from the gateway in a sandbox of its own, but that sandboxing is off by default, and the recipe's configuration keeps it off.
+Why run OpenClaw on OpenShift, and why add OpenShell?
+Running OpenClaw on OpenShift keeps its state, memory, and credentials on a platform you control, and it answers with a model you serve yourself rather than sending your prompts to an outside provider.
+OpenClaw can sandbox the agent's own commands, but that sandboxing is off by default, and the recipe keeps it off.
 OpenShell closes that gap from the outside.
 It wraps the whole agent in a policy that the kernel enforces on every file access, system call, and network connection.
-That's the part I find most convincing: the rules live in code outside the agent, not in a prompt the model is asked to follow.
+The rules live in code outside the agent, not in a prompt the model is asked to follow.
 
 == Three ways to run it
 
