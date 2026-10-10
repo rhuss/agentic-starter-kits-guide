@@ -1,0 +1,248 @@
+# Claims of the config-state-lifecycle scene, round 2 (lane 2 redrawn after the fact check of
+# 2026-10-10). Element ids are the scene's ids.
+diagram: config-state-lifecycle
+claims:
+  # --- Lane 1: first start ------------------------------------------------------
+  - id: lane1-first-start
+    kind: contains
+    elements: [lane1, lane1-title, l1_apply, l1_configmap, l1_init, l1_pvc]
+    text: On the first start, the administrator applies the manifests, which create the ConfigMap; the init container init-config seeds openclaw.json onto the PVC.
+    sources:
+      - "starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:136-142,205"
+      - "starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:21-55"
+  - id: l1-apply
+    kind: label
+    elements: [l1_apply]
+    text: The administrator deploys with oc apply -k manifests/.
+    sources:
+      - "starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:141"
+      - "starter-kits:agents/openclaw/deployment/README.md:30"
+  - id: a1-apply-creates-configmap
+    kind: connects
+    elements: [a1_apply_cm]
+    text: oc apply -k manifests/ creates the ConfigMap (02-configmap.yaml is a kustomization resource).
+    sources:
+      - "starter-kits:agents/openclaw/deployment/manifests/kustomization.yaml:4-10"
+  - id: l1-configmap
+    kind: label
+    elements: [l1_configmap]
+    text: The ConfigMap openclaw-config holds openclaw.json.
+    sources:
+      - "starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:4,12"
+  - id: a1-configmap-mounted
+    kind: connects
+    elements: [a1_cm_init]
+    text: The ConfigMap is mounted into the init container at /config.
+    sources:
+      - "starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:51-53,134-137"
+      - "live:oc get deployment openclaw -n openclaw-fresh -o jsonpath (initContainers volumeMounts, volumes), cluster cntbh, 2026-10-10: init-config mounts config at /config"
+  - id: l1-init
+    kind: label
+    elements: [l1_init]
+    text: init-config is an init container.
+    sources:
+      - "starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:21-22"
+  - id: a1-init-copies-if-missing
+    kind: connects
+    elements: [a1_init_pvc]
+    text: init-config copies openclaw.json to the PVC only if it is missing there.
+    sources:
+      - "starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:42-50"
+      - "starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:205"
+  - id: l1-pvc
+    kind: label
+    elements: [l1_pvc]
+    text: The PVC openclaw-state is mounted at /home/node and holds ~/.openclaw/openclaw.json.
+    sources:
+      - "starter-kits:agents/openclaw/deployment/manifests/03-pvc.yaml:4"
+      - "starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:48,54-55,81-84,97-99,138-140"
+
+  # --- Lane 2: running ------------------------------------------------------------
+  - id: lane2-running
+    kind: contains
+    elements: [lane2, lane2-title, l2_patch, l2_gateway, l2_gateway_proc, l2_configmap, l2_pvc, l2_safety]
+    text: While the gateway runs, the administrator changes the configuration with the config patch CLI in the gateway container; the CLI writes the PVC copy (the config source), the gateway picks the change up, and the ConfigMap no longer reaches the gateway.
+    sources:
+      - "starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:203-213"
+  - id: l2-patch
+    kind: label
+    elements: [l2_patch]
+    text: The administrator changes the configuration with oc exec ... config patch --stdin.
+    sources:
+      - "starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:205-211"
+      - "openclaw:docs/cli/config.md:384-399"
+  - id: a2-patch-to-cli
+    kind: connects
+    elements: [a2_patch_gw]
+    text: The patch goes on stdin to the openclaw config patch CLI process that oc exec starts in the gateway container; it is a config-shaped JSON5 object that merges.
+    sources:
+      - "openclaw:docs/cli/config.md:384-399"
+      - "openclaw:src/cli/config-cli-runner.ts:531-537"
+      - "starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:205-211"
+  - id: l2-cli
+    kind: label
+    elements: [l2_gateway]
+    text: The config patch CLI runs in the gateway container, validates the whole patched configuration, and prints a restart hint derived from the changed paths.
+    sources:
+      - "openclaw:src/cli/config-cli-runner.ts:237-262,507-529,560-574"
+      - "openclaw:docs/cli/config.md:573-587"
+      - "starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:205-211"
+  - id: a2-cli-writes-pvc
+    kind: connects
+    elements: [a2_gw_pvc]
+    text: The config patch CLI writes openclaw.json on the PVC itself (replaceConfigFile, auditOrigin cli).
+    sources:
+      - "openclaw:src/cli/config-cli-runner.ts:531-551"
+      - "openclaw:docs/gateway/configuration/hot-reload.md:13-15,54"
+      - "starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:97-99"
+  - id: l2-gateway-proc
+    kind: label
+    elements: [l2_gateway_proc]
+    text: The running gateway watches openclaw.json and, in the default hybrid reload mode, hot-applies the change or restarts when required.
+    sources:
+      - "openclaw:docs/gateway/configuration/hot-reload.md:13-15,31-35,60-64"
+  - id: a2-watcher-picks-up
+    kind: connects
+    elements: [a2_pvc_gw]
+    text: The gateway picks up the change on the PVC through its file watcher (writes from a separate CLI process are on-disk changes the watcher observes).
+    sources:
+      - "openclaw:docs/gateway/configuration/hot-reload.md:31-35,54"
+  - id: a2-configmap-not-to-gateway
+    kind: connects
+    elements: [a2_cm_gw, x2_cm_gw_a, x2_cm_gw_b]
+    text: (Crossed arrow, ends on the gateway process box) the ConfigMap does not reach the running gateway; the gateway container mounts only the PVC.
+    sources:
+      - "starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:97-99,134-140"
+      - "live:oc get deployment openclaw -n openclaw-fresh -o jsonpath (containers volumeMounts), cluster cntbh, 2026-10-10: gateway mounts only data at /home/node"
+  - id: l2-configmap
+    kind: label
+    elements: [l2_configmap]
+    text: Edits of the ConfigMap do not reach the running gateway; keep it in sync for a new PVC.
+    sources:
+      - "starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:42-50,97-99"
+      - "starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:205,213"
+  - id: l2-pvc
+    kind: label
+    elements: [l2_pvc]
+    text: The PVC copy ~/.openclaw/openclaw.json is owned by OpenClaw.
+    sources:
+      - "starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:205"
+      - "starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:42-44"
+      - "openclaw:docs/gateway/configuration/hot-reload.md:13-15"
+  - id: a2-blocked-write
+    kind: connects
+    elements: [a2_gw_safety]
+    text: Write safety applies to every OpenClaw-owned config writer, here the config patch CLI; a blocked write leaves the active file as it is.
+    sources:
+      - "openclaw:docs/cli/config.md:592-594"
+      - "openclaw:docs/gateway/configuration.md:110-117"
+      - "openclaw:src/config/io.write.ts:426-445"
+  - id: l2-safety
+    kind: label
+    elements: [l2_safety]
+    text: Write safety blocks accidental clobbers and saves the payload as openclaw.json.rejected.*.
+    sources:
+      - "openclaw:docs/cli/config.md:594"
+      - "openclaw:docs/gateway/configuration.md:110-117"
+      - "openclaw:src/config/io.write.ts:426-445"
+
+  # --- Lane 3: upgrade ------------------------------------------------------------
+  - id: lane3-upgrade
+    kind: contains
+    elements: [lane3, lane3-title, l3_backup, l3_apply, l3_pvc, l3_init, l3_doctor, l3_gateway]
+    text: An upgrade backs up the state, applies the new manifests, and on the next start runs the init move, doctor, and the gateway.
+    sources:
+      - "starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:215-241"
+  - id: l3-backup
+    kind: label
+    elements: [l3_backup]
+    text: Back up the state with oc exec ... tar czf - -C /home/node .openclaw > openclaw-backup.tgz.
+    sources:
+      - "starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:217-222"
+  - id: a3-pvc-to-backup
+    kind: connects
+    elements: [a3_pvc_backup]
+    text: The backup reads the state from the PVC.
+    sources:
+      - "starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:220-221"
+      - "starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:97-99"
+  - id: a3-backup-then-apply
+    kind: connects
+    elements: [a3_backup_apply]
+    text: After the backup, apply the new manifests.
+    sources:
+      - "starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:217,226"
+  - id: l3-apply
+    kind: label
+    elements: [l3_apply]
+    text: Apply the new manifests with oc apply -k manifests/.
+    sources:
+      - "starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:226-230"
+  - id: a3-apply-first-start
+    kind: connects
+    elements: [a3_apply_init]
+    text: The first start after the upgrade runs init-config.
+    sources:
+      - "starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:232-234"
+  - id: l3-init
+    kind: label
+    elements: [l3_init]
+    text: init-config moves root-level state into ~/.openclaw once.
+    sources:
+      - "starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:31-40"
+      - "starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:234"
+  - id: a3-init-to-pvc
+    kind: connects
+    elements: [a3_init_pvc]
+    text: init-config moves the state on the PVC.
+    sources:
+      - "starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:35-40,54-55"
+  - id: a3-init-then-doctor
+    kind: connects
+    elements: [a3_init_doctor]
+    text: After init-config, doctor runs.
+    sources:
+      - "starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:232-235"
+      - "starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:21,65-76"
+  - id: l3-doctor
+    kind: label
+    elements: [l3_doctor]
+    text: The image entrypoint runs doctor --fix, which migrates the state and backs up the state database first.
+    sources:
+      - "openclaw:docker-entrypoint.mjs:78-99"
+      - "openclaw:docs/install/docker.md:228-234,250-256"
+      - "starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:235"
+      - "starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:69-76"
+  - id: a3-doctor-to-pvc
+    kind: connects
+    elements: [a3_doctor_pvc]
+    text: doctor migrates the state on the PVC.
+    sources:
+      - "openclaw:docs/install/docker.md:228-234"
+      - "starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:83-84,97-99"
+  - id: a3-doctor-then-gateway
+    kind: connects
+    elements: [a3_doctor_gw]
+    text: After doctor, the gateway starts.
+    sources:
+      - "openclaw:docker-entrypoint.mjs:89-116"
+      - "openclaw:docs/install/docker.md:230-232"
+  - id: l3-gateway
+    kind: label
+    elements: [l3_gateway]
+    text: The gateway logs [gateway] ready within the 5-minute startup budget.
+    sources:
+      - "starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:235-241"
+      - "starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:108-116"
+      - "openclaw:src/gateway/server-startup-readiness.ts:9-12"
+  - id: l3-pvc
+    kind: label
+    elements: [l3_pvc]
+    text: The PVC openclaw-state is mounted at /home/node; the state lives in ~/.openclaw.
+    sources:
+      - "starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:31-34,54-55,97-99"
+
+  # --- Legend -----------------------------------------------------------------------
+  - id: legend
+    kind: legend
+    elements: [lg_title, lg_platform, lg_platform_t, lg_governance, lg_governance_t, lg_admin, lg_admin_t, lg_crossed, lg_x_a, lg_x_b, lg_crossed_t]
