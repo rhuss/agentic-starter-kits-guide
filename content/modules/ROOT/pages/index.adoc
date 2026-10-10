@@ -1,79 +1,113 @@
 = OpenClaw on OpenShift
 
 // Sources:
-// starter-kits:agents/openclaw/deployment/README.md:5-12,19,24-31,67-100,105,110-157,165
-// starter-kits:agents/openclaw/templates/openclaw_agent/README.md:1-5,16-21
-// starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:1-10,23-24,67-68
-// starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:18-20
-// starter-kits:agents/openclaw/deployment/manifests/01-secret.yaml:10
-// starter-kits:agents/openclaw/deployment/docs/mlflow-tracing.md:7,41
-// starter-kits:agents/openclaw/deployment/docs/installer-deployment.md:5,77-102
-// starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:120,167-168
-// starter-kits:agents/openclaw/deployment/Containerfile.openshell:9,13-33
-// starter-kits:sandboxes/base/README.md:7-11
-// claw-installer:README.md:3-13
+// starter-kits:README.md:11
+// starter-kits:agents/openclaw/deployment/README.md:5-10,12,18-19,24-31,35-64,110-148,165
+// starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:14-16,26-28,31-36
+// starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:8-10
+// starter-kits:agents/openclaw/deployment/manifests/06-route.yaml:12-20
+// starter-kits:agents/openclaw/deployment/docs/installer-deployment.md:5,438
+// starter-kits:agents/openclaw/templates/openclaw_agent/README.md:21
+// openclaw:README.md:18,20
+// openclaw:docs/start/why-openclaw.md:11,13,21,29,51
+// openclaw:docs/concepts/architecture.md:10-14
+// openclaw:docs/web/control-ui.md:3,11-13,24
+// openshell:README.md:19,23,25
+// openshell:docs/about/overview.mdx:11,21
+// claw-installer:README.md:3,13,35-36
 // claw-installer:provider-plugins/openshift/templates/oauth-proxy-container.yaml:1-7
-// claw-installer:src/server/deployers/k8s-helpers.ts:36-38,60-64
-// openshell:docs/kubernetes/openshift.mdx:50-72
+// url:https://docs.vllm.ai/en/latest/
 
-The {starter-kits-repo}[Agentic Starter Kits] ship a recipe for running https://github.com/openclaw/openclaw[OpenClaw] on Red Hat OpenShift, with your model served by vLLM.
-The recipe describes the agent as an open-source AI coding assistant with a web interface.
-A built-in gateway routes every request to an OpenAI-compatible model endpoint, so the model can come from vLLM, KServe, or an external API.
+By the end of this guide, you have an OpenClaw agent on Red Hat OpenShift that you chat with in your browser.
+It answers with a model you serve yourself through vLLM.
+And you deploy it with access to a single namespace, no cluster-admin rights needed.
 
-On OpenShift, the gateway runs as a Deployment with a single replica.
-Its state lives on a PersistentVolumeClaim, and a Service and a Route make it reachable.
-The recipe has a second piece, too: an image that puts the same agent into an OpenShell sandbox.
-All of it lives in {starter-kits-tree}/agents/openclaw[`agents/openclaw/`].
-The `deployment/` directory holds the manifests, the overlays, the recipe's own docs, and the sandbox image, while `templates/openclaw_agent/` holds a short agent description.
+Why bother running an agent yourself?
+An agent that acts for you holds credentials, reads mail, and runs commands on real computers.
+So where it runs, and what it may reach, matters more than it does for any app you've installed before.
+Running one on your own platform usually means stitching the pieces together yourself.
+The {starter-kits-repo}[Agentic Starter Kits] ship a recipe that does the stitching, and this guide walks you through it.
 
-This page shows you the three ways to run OpenClaw and points you to the part of the guide that fits your role.
+== What the parts are
+
+Three products do the work here.
+Let's take them one at a time.
+
+=== OpenClaw
+
+https://github.com/openclaw/openclaw[OpenClaw] is an open-source AI agent.
+Instead of you opening an app and clicking through its screens, an agent does the work on your behalf.
+OpenClaw keeps its state, memory, and credentials on infrastructure you control, and the model behind it is a plugin you can swap.
+
+At the center of OpenClaw sits the _gateway_: one long-running process that holds the agent's connections and that every client talks to.
+In this guide, your client is the _Control UI_, a small web app that the gateway itself serves.
+You open it in a browser tab, and that's where you chat with the agent.
+
+=== OpenShell
+
+{openshell-repo}[OpenShell] is an open-source runtime that runs AI agents in isolated sandboxes.
+A _sandbox_ is a fenced-off environment for one agent.
+Kernel controls decide which files the agent may open and which system calls it may make, and every network connection passes a policy check before it leaves the sandbox.
+You declare that policy yourself, and OpenShell enforces it.
+The agent never sees real credentials, either: OpenShell adds them only to requests bound for endpoints you approved.
+
+=== vLLM
+
+https://docs.vllm.ai/en/latest/[vLLM] is a library for running large language models and serving them through an OpenAI-compatible API.
+The recipe is set up for vLLM, and it accepts KServe or an external API as the model endpoint too.
+
+== How they fit together
+
+image::big-picture.svg["The browser reaches OpenClaw on OpenShift either as a Deployment or inside an OpenShell sandbox whose policy gate controls egress, and both call your model endpoint (vLLM or any OpenAI-compatible API) outside the cluster",role=expand]
+
+You talk to OpenClaw, and OpenClaw talks to your model.
+On the main path, the OpenClaw gateway runs as a Deployment with one Pod, and an OpenShift Route carries your browser's HTTPS traffic to it.
+Each time the agent needs an answer, the gateway calls your model endpoint over the OpenAI-compatible API.
+
+On the second path, the same OpenClaw runs inside an OpenShell sandbox on the cluster.
+`openshell forward start` brings the Control UI's port to your machine.
+Here the policy check earns its keep: the sandbox denies all network egress by default.
+OpenClaw reaches your model only after you add a policy rule for that endpoint.
+
+Why put these three together?
+OpenClaw sends your prompts to the model provider you configure, and in this setup that provider is your own vLLM server rather than an outside service.
+OpenClaw can run the agent's commands apart from the gateway in a sandbox of its own, but that sandboxing is off by default, and the recipe's configuration keeps it off.
+OpenShell closes that gap from the outside.
+It wraps the whole agent in a policy that the kernel enforces on every file access, system call, and network connection.
+That's the part I find most convincing: the rules live in code outside the agent, not in a prompt the model is asked to follow.
 
 == Three ways to run it
 
-The recipe gives you three ways to get OpenClaw running.
+You can get OpenClaw running in three ways.
 Not sure which one fits?
 xref:overview/choose-a-path.adoc[Choose how to run OpenClaw] puts them side by side.
 
-=== Raw manifests
-
+Raw manifests::
+You apply the recipe's own manifests to your namespace with `oc`.
 The recipe recommends this way, and the Administrator guide follows it.
-The manifests in `agents/openclaw/deployment/manifests/` create a Secret for the gateway token, a ConfigMap with the model endpoint and gateway configuration, a PersistentVolumeClaim, the Deployment, a ClusterIP Service, and a TLS edge Route.
-You fill in your model endpoint and token, then apply everything with `oc apply -k manifests/`.
-Kustomize overlays adapt the model endpoint, storage class, and namespace to your environment.
-The `mlflow-tracing` overlay adds an OpenTelemetry collector sidecar that forwards traces to the shared MLflow instance of Red Hat OpenShift AI.
-The gateway image is pinned by digest to OpenClaw {openclaw-version}.
-Browsers authenticate with the token from the Secret, and no OAuth proxy sits in front of the gateway.
 
-=== claw-installer
+claw-installer::
+{claw-installer-repo}[claw-installer] is a web app you start on your own machine.
+You fill in a form in the browser, and it deploys OpenClaw for you, with an OpenShift sign-in in front of the gateway.
+xref:admin/deploy-installer.adoc[Deploy with claw-installer] covers it.
 
-{claw-installer-repo}[claw-installer] is a web application that you start on your own machine.
-You open it in the browser, fill in a form, and its OpenShift plugin deploys OpenClaw for you.
-It also adds an OAuth proxy sidecar, so people sign in with their OpenShift account before they reach the gateway.
-The recipe lists the installer as an alternative and recommends the raw manifests.
-Keep one difference in mind: unless you set an image, the installer deploys a `:latest` tag such as `ghcr.io/openclaw/openclaw:latest` instead of a pinned digest.
-xref:admin/deploy-installer.adoc[Deploy with claw-installer] covers this path.
+OpenShell sandbox::
+You build an image with OpenClaw inside and run it in an OpenShell sandbox.
+Installing OpenShell on the cluster is cluster-admin work, and xref:admin/install-openshell.adoc[Install OpenShell for sandboxes] sets it up.
 
-=== OpenShell sandbox
-
-The third way runs OpenClaw inside an {openshell-repo}[OpenShell] sandbox instead of the recipe's manifests.
-The recipe's `Containerfile.openshell` builds on the shared sandbox base image from `sandboxes/base/`, which brings UBI 10 minimal, a `sandbox` user, and a default sandbox policy.
-On top of that, it adds Node.js and OpenClaw {openclaw-version}.
-You build and push the image yourself, because an OpenShell gateway on the cluster pulls sandbox images from a registry.
-The OpenClaw gateway then runs as the sandbox's main process, and `openshell forward start` brings its port to your machine.
-One catch: the sandbox policy blocks all network egress by default.
-You add a rule that lets OpenClaw reach your model endpoint.
-The recipe tested this path with OpenShell {openshell-version}, and its agent description presents the sandbox mode as one for experimentation.
-Your cluster needs an OpenShell gateway first, and xref:admin/install-openshell.adoc[Install OpenShell for sandboxes] sets one up.
-
-== Support
+== Status and limits
 
 [IMPORTANT]
 ====
-The OpenClaw container image (`ghcr.io/openclaw/openclaw`) is built and published by the OpenClaw upstream community, not by Red Hat.
+The OpenClaw container image is built and published by the OpenClaw upstream community, not by Red Hat.
 It hasn't been built, scanned, or validated according to Red Hat standards, so use it at your own discretion.
-The manifests repeat this warning next to both OpenClaw image references in the Deployment.
-According to the recipe, a Red Hat supported image may follow in a future release.
+A Red Hat supported image may follow in a future release.
 ====
+
+Two more limits might change your decision.
+The gateway runs as a single replica, so there's no high availability: its SQLite storage doesn't support concurrent writers.
+And the sandbox path is meant for experimentation.
+The recipe tested it with OpenShell {openshell-version}.
 
 == Find your part of the guide
 
