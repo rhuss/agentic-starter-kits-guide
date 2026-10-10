@@ -1,0 +1,187 @@
+# Claims made by the sandbox-flow scene, round 2 (redraw after the fact check of 2026-10-10).
+# Pinned sources: openshell = NVIDIA/OpenShell v0.1.2 (6648bd0c), starter-kits = d25f4c7e.
+# Placement of OpenShell parts follows OpenShell's own architecture docs at v0.1.2 and a live
+# check; the integrating repo (starter-kits) is cited only for commands, names, and the image.
+diagram: sandbox-flow
+claims:
+  # --- frame: Developer workstation (ws) ---
+  - id: ws-title
+    kind: label
+    elements: [t_ws]
+    text: The build, the openshell CLI, the forward listener, and the browser run on the developer's workstation.
+    sources: ["starter-kits:agents/openclaw/deployment/README.md:114-136"]
+  - id: ws-contents
+    kind: contains
+    elements: [ws, cli, fwd, browser, podman]
+    text: podman, the openshell CLI, the openshell forward listener, and the browser run on the workstation.
+    sources: ["starter-kits:agents/openclaw/deployment/README.md:119-120,128-136", "openshell:docs/kubernetes/openshift.mdx:78-83", "openshell:docs/how-it-works/sandboxes/overview.mdx:664-672"]
+  - id: cli-label
+    kind: label
+    elements: [cli]
+    text: The openshell CLI.
+    sources: ["starter-kits:agents/openclaw/deployment/README.md:128-147"]
+  - id: fwd-label
+    kind: label
+    elements: [fwd]
+    text: openshell forward start 18789 runs a background local forward listener.
+    sources: ["starter-kits:agents/openclaw/deployment/README.md:136", "openshell:docs/how-it-works/sandboxes/overview.mdx:664-672"]
+  - id: browser-label
+    kind: label
+    elements: [browser]
+    text: The browser.
+    sources: ["starter-kits:agents/openclaw/deployment/README.md:133"]
+  - id: podman-label
+    kind: label
+    elements: [podman]
+    text: podman (builds and pushes the image).
+    sources: ["starter-kits:agents/openclaw/deployment/README.md:114-120"]
+
+  # --- standalone: Container registry, Model endpoint ---
+  - id: registry-label
+    kind: label
+    elements: [registry]
+    text: A container registry the cluster pulls the sandbox image from.
+    sources: ["starter-kits:agents/openclaw/deployment/README.md:116", "openshell:docs/how-it-works/sandboxes/overview.mdx:183-184"]
+  - id: model-label
+    kind: label
+    elements: [model]
+    text: The model endpoint is vLLM, KServe, or an external API with an OpenAI-compatible API; drawn outside the namespace because no source places it there.
+    sources: ["starter-kits:agents/openclaw/deployment/README.md:19,58-64"]
+
+  # --- frame: OpenShift namespace (ns) ---
+  - id: ns-title
+    kind: label
+    elements: [t_ns]
+    text: One OpenShift namespace holds the gateway and the sandbox resources (the gateway may also run in a separate namespace).
+    sources: ["openshell:docs/kubernetes/setup.mdx:21-26,242", "live:oc -n openshell-test get statefulset,sandboxes.agents.x-k8s.io,svc,networkpolicy on cluster cntbh, 2026-10-10: statefulset/openshell, Sandbox default--oc-gw, Services os-boundary-*, NetworkPolicies openshell-sandbox-* share namespace openshell-test"]
+  - id: ns-contents
+    kind: contains
+    elements: [ns, gateway, wl, sup, netpol]
+    text: The gateway, the workload pod, the separate supervisor pod, and the NetworkPolicy live in the namespace.
+    sources: ["openshell:docs/kubernetes/setup.mdx:21-30,242", "openshell:docs/about/architecture.mdx:100-104", "live:oc -n openshell-test get statefulset,sandboxes.agents.x-k8s.io,networkpolicy on cluster cntbh, 2026-10-10: statefulset/openshell, Sandbox default--oc-gw, NetworkPolicies openshell-sandbox-supervisors, openshell-sandbox-workloads, openshell-sandbox-ssh"]
+  - id: gateway-label
+    kind: label
+    elements: [gateway]
+    text: The OpenShell gateway is a Helm release running as StatefulSet openshell.
+    sources: ["openshell:docs/kubernetes/openshift.mdx:57-59,71", "openshell:docs/kubernetes/setup.mdx:181,240"]
+  - id: netpol-label
+    kind: label
+    elements: [netpol]
+    text: A NetworkPolicy gives the workload no egress and admits only the supervisor to the boundary port 5500.
+    sources: ["openshell:docs/kubernetes/setup.mdx:29-30", "openshell:docs/about/architecture.mdx:31,90-92,104", "live:oc -n openshell-test get networkpolicy openshell-sandbox-workloads -o jsonpath={.spec} on cluster cntbh, 2026-10-10: selects boundary-role=workload, policyTypes Ingress and Egress, no egress rules, ingress only from boundary-role=supervisor on TCP 5500"]
+
+  # --- frame: Sandbox workload pod (wl), nested in ns ---
+  - id: wl-title
+    kind: label
+    elements: [t_wl]
+    text: The frame is the sandbox workload pod, created by the Agent Sandbox controller.
+    sources: ["openshell:docs/kubernetes/setup.mdx:21-23"]
+  - id: wl-contents
+    kind: contains
+    elements: [wl, sbx, openclaw, imgpolicy]
+    text: The workload pod runs openshell-sandbox as its container command, which runs openclaw gateway; the image policy ships in the workload image. No supervisor runs in this pod.
+    sources: ["openshell:docs/about/architecture.mdx:46-47,100-104", "openshell:architecture/compute-runtimes.md:389,393-395", "openshell:docs/how-it-works/policies/manage-policies.mdx:40-52", "starter-kits:sandboxes/base/Containerfile:58-60", "live:oc -n openshell-test get sandboxes.agents.x-k8s.io default--oc-gw -o jsonpath on cluster cntbh, 2026-10-10: only container agent, command /.openshell/runtime/openshell-sandbox --bootstrap /.openshell/state/bootstrap/boundary.json, image openclaw-sandbox flavor image"]
+  - id: sbx-label
+    kind: label
+    elements: [sbx]
+    text: openshell-sandbox replaces the image command, owns the agent as its child, and applies Landlock and seccomp.
+    sources: ["openshell:docs/about/architecture.mdx:30,46-50", "openshell:architecture/compute-runtimes.md:389,393-395", "live:oc -n openshell-test get sandboxes.agents.x-k8s.io default--oc-gw on cluster cntbh, 2026-10-10: container command /.openshell/runtime/openshell-sandbox --bootstrap /.openshell/state/bootstrap/boundary.json"]
+  - id: openclaw-label
+    kind: label
+    elements: [openclaw]
+    text: openclaw gateway is the sandbox's main process, a Node.js program bound to loopback on port 18789.
+    sources: ["starter-kits:agents/openclaw/deployment/README.md:124-130,141,150", "openshell:docs/how-it-works/sandboxes/overview.mdx:23-25"]
+  - id: imgpolicy-label
+    kind: label
+    elements: [imgpolicy]
+    text: The image policy at /etc/openshell/policy.yaml sets filesystem, landlock, and process sections.
+    sources: ["openshell:docs/how-it-works/policies/manage-policies.mdx:40-52", "starter-kits:sandboxes/base/Containerfile:58-60", "starter-kits:sandboxes/base/policy.yaml:3,19,22"]
+
+  # --- frame: Supervisor pod (sup), nested in ns ---
+  - id: sup-title
+    kind: label
+    elements: [t_sup]
+    text: On Kubernetes the supervisor runs in its own pod, separate from the workload pod.
+    sources: ["openshell:docs/about/architecture.mdx:100-104", "openshell:docs/kubernetes/setup.mdx:21-22", "openshell:architecture/compute-runtimes.md:389"]
+  - id: sup-contents
+    kind: contains
+    elements: [sup, supervisor, rule]
+    text: The supervisor pod runs openshell-supervisor, which holds and enforces the sandbox network policy, including the model_endpoint rule.
+    sources: ["openshell:docs/kubernetes/setup.mdx:21-22", "openshell:architecture/compute-runtimes.md:389,393-396", "openshell:docs/about/architecture.mdx:22-24,32"]
+  - id: supervisor-label
+    kind: label
+    elements: [supervisor]
+    text: openshell-supervisor checks requests against policy and opens approved connections.
+    sources: ["openshell:docs/about/architecture.mdx:32,86-88", "openshell:architecture/compute-runtimes.md:389"]
+  - id: rule-label
+    kind: label
+    elements: [rule]
+    text: The network rule model_endpoint lets the binary /usr/local/bin/node reach the model host.
+    sources: ["starter-kits:agents/openclaw/deployment/README.md:141-150", "openshell:docs/how-it-works/policies/network-rules.mdx:82-84"]
+
+  # --- arrows ---
+  - id: build
+    kind: connects
+    elements: [a_build]
+    text: podman builds the image and pushes it to the registry.
+    sources: ["starter-kits:agents/openclaw/deployment/README.md:114-120"]
+  - id: pull
+    kind: connects
+    elements: [a_pull]
+    text: The workload pod's agent container runs the --from image pulled from the registry.
+    sources: ["openshell:docs/how-it-works/sandboxes/overview.mdx:158-160,183-184", "starter-kits:agents/openclaw/deployment/README.md:116-130", "live:oc -n openshell-test get sandboxes.agents.x-k8s.io default--oc-gw on cluster cntbh, 2026-10-10: container agent image is the openclaw-sandbox flavor image from a registry"]
+  - id: create
+    kind: connects
+    elements: [a_create]
+    text: The CLI sends sandbox create --from <image> and policy update --add-endpoint to the gateway; all CLI control-plane traffic goes through the gateway.
+    sources: ["starter-kits:agents/openclaw/deployment/README.md:127-130,144-147", "openshell:docs/how-it-works/gateways/overview.mdx:11", "openshell:docs/how-it-works/policies/manage-policies.mdx:86-88"]
+  - id: browse
+    kind: connects
+    elements: [a_browse]
+    text: The browser opens localhost:18789, which the openshell forward listener serves.
+    sources: ["starter-kits:agents/openclaw/deployment/README.md:133-136"]
+  - id: tunnel
+    kind: connects
+    elements: [a_tunnel]
+    text: The forward is an OpenShell SSH forward that travels through the gateway.
+    sources: ["openshell:docs/how-it-works/sandboxes/overview.mdx:686-690", "openshell:docs/security/best-practices.mdx:274"]
+  - id: make-workload
+    kind: connects
+    elements: [a_wl]
+    text: The gateway's driver creates a Sandbox resource; the Agent Sandbox controller creates the workload pod from it.
+    sources: ["openshell:docs/kubernetes/setup.mdx:21-23,50-58", "live:oc -n openshell-test get sandboxes.agents.x-k8s.io on cluster cntbh, 2026-10-10: Sandbox default--oc-gw holds the workload pod template"]
+  - id: make-supervisor
+    kind: connects
+    elements: [a_sup]
+    text: The gateway's driver creates the separate supervisor pod.
+    sources: ["openshell:docs/kubernetes/setup.mdx:21-22", "openshell:docs/about/architecture.mdx:20-21"]
+  - id: session
+    kind: connects
+    elements: [a_session]
+    text: The supervisor keeps an outbound session to the gateway for policy, logs, and interactive sessions; forwards reach the sandbox over this control path.
+    sources: ["openshell:docs/kubernetes/setup.mdx:28-29", "openshell:docs/about/architecture.mdx:22-24,32,125", "openshell:docs/security/best-practices.mdx:274"]
+  - id: dial
+    kind: connects
+    elements: [a_dial]
+    text: The supervisor dials into the workload over mutual TLS through the boundary Service on port 5500.
+    sources: ["openshell:docs/kubernetes/setup.mdx:23-24,28", "openshell:docs/about/architecture.mdx:57-60,104,126", "live:oc -n openshell-test get svc on cluster cntbh, 2026-10-10: Services os-boundary-<id> on 5500/TCP select openshell.ai/boundary-role=workload"]
+  - id: egress-hop1
+    kind: connects
+    elements: [a_egress1]
+    text: Egress hop 1, the agent's network requests travel from openshell-sandbox to the supervisor over the boundary channel, the workload's only allowed egress.
+    sources: ["openshell:docs/about/architecture.mdx:30,83-92,127", "openshell:docs/kubernetes/setup.mdx:30-32"]
+  - id: egress-hop2
+    kind: connects
+    elements: [a_egress2]
+    text: Egress hop 2, the supervisor opens the real connection to the model endpoint only when the model_endpoint rule allows it.
+    sources: ["openshell:docs/about/architecture.mdx:86-88", "openshell:docs/kubernetes/setup.mdx:31-32", "starter-kits:agents/openclaw/deployment/README.md:141-150", "openshell:docs/how-it-works/policies/network-rules.mdx:82-84"]
+  - id: launch
+    kind: connects
+    elements: [a_launch]
+    text: openshell-sandbox launches openclaw gateway as the main process and provides loopback forwarding to port 18789.
+    sources: ["openshell:docs/about/architecture.mdx:46-47", "openshell:docs/how-it-works/sandboxes/overview.mdx:23-25", "starter-kits:agents/openclaw/deployment/README.md:128-136"]
+
+  # --- legend ---
+  - id: legend
+    kind: legend
+    elements: [lg_title, lg_user, lg_user_t, lg_platform, lg_platform_t, lg_gov, lg_gov_t]

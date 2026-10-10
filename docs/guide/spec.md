@@ -158,7 +158,7 @@ Paths are relative to `content/modules/ROOT/pages/`.
 |---|---|---|---|
 | 1 | `deployment-architecture` | Route, Service, Pod with init container, gateway, and optional collector; PVC, ConfigMap, Secret; model endpoint; RHOAI MLflow | `overview/architecture` |
 | 2 | `config-state-lifecycle` | ConfigMap seed on first start, the PVC copy as source of truth, `config patch` through `oc exec`, the upgrade path through the init move and doctor | `admin/change-config` |
-| 3 | `sandbox-flow` | Workstation build and push, registry, OpenShell gateway, sandbox pod (supervisor, gateway on loopback, image policy), egress rule, `forward start` | `developer/run-in-sandbox` |
+| 3 | `sandbox-flow` | Workstation build and push, registry, OpenShell gateway, a separate supervisor pod (policy, `model_endpoint` rule) and a workload pod (`openshell-sandbox` launching the gateway on loopback, image policy) joined by the mutual TLS boundary Service, NetworkPolicy, egress through the supervisor, `forward start` (revised 2026-10-10 for OpenShell 0.1.2) | `developer/run-in-sandbox` |
 | 4 | `big-picture` | The reader's browser, the OpenShift cluster with the OpenClaw gateway (Deployment path) and, alternatively, OpenClaw inside an OpenShell sandbox whose requests the OpenShell supervisor (own pod) checks against policy, and the model endpoint both call (vLLM, KServe, or an external API; the recipe does not deploy it); no Kubernetes object detail | `index` |
 
 ## Experimental content

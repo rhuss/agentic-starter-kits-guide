@@ -1,7 +1,10 @@
 = Run OpenClaw in an OpenShell sandbox
 
 // Sources:
-// starter-kits:agents/openclaw/deployment/README.md:116,123-137,139-150,161-165
+// starter-kits:agents/openclaw/deployment/README.md:116,123-137,139-150,162-165
+// openshell:docs/kubernetes/setup.mdx:20-25
+// openshell:docs/about/architecture.mdx:20-24,46-47,100-104
+// openshell:architecture/compute-runtimes.md:389
 // openshell:crates/openshell-cli/src/main.rs:1423-1439,1534-1536,1579-1581
 // openshell:crates/openshell-cli/src/main.rs:1584-1638
 // openshell:crates/openshell-cli/src/main.rs:2098-2156,2288-2302
@@ -19,13 +22,13 @@ The OpenClaw flavor image is built and pushed to a registry the gateway can pull
 
 The flow has three steps: create the sandbox with the gateway as its main process, forward the gateway port to your machine, and open egress to your model endpoint.
 
-image::sandbox-flow.svg["The OpenShell sandbox flow from a workstation: build and push the flavor image, create the sandbox on the gateway, forward the gateway port, and open egress to the model endpoint",role=expand]
+image::sandbox-flow.svg["OpenClaw in an OpenShell sandbox on OpenShift: podman builds and pushes the image; the openshell CLI asks the OpenShell gateway to create the sandbox, and the gateway creates a separate supervisor pod and a workload pod in which openshell-sandbox launches the OpenClaw gateway; the browser reaches loopback port 18789 through the local forward, the gateway, and the supervisor; agent egress goes to the supervisor over the mutual TLS boundary and on to the model endpoint only where the model_endpoint rule allows it",role=expand]
 
 == Create the sandbox
 
 A sandbox runs one canonical main process.
 OpenShell starts the command you place after `--`, supervises it, and reports its exit status.
-The supervisor itself runs as PID 1 and ignores the image entrypoint, so the gateway does not start on its own.
+On Kubernetes, the sandbox container runs OpenShell's sandbox runtime instead of the image entrypoint, and the supervisor runs in a separate pod, so the gateway does not start on its own.
 You name it explicitly as the main process instead.
 
 The gateway here runs unauthenticated and unconfigured, which keeps this first run simple.
