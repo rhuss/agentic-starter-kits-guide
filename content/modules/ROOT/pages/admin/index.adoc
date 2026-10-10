@@ -88,7 +88,9 @@ If `gp3-csi` isn't among them, change `storageClassName` in `manifests/03-pvc.ya
 
 The gateway sends its model requests to an OpenAI-compatible endpoint, which can be vLLM, KServe, or an external API.
 The model behind that endpoint has to support structured tool calling, because OpenClaw relies on it.
-Not every model qualifies: some emit raw JSON instead of calling a tool.
+Not every model qualifies.
+Some write the tool call as text in their reply instead of making a structured tool call the gateway can run, so no tool runs.
+Others invent a tool's result, presenting made-up data as if a tool had returned it.
 When vLLM serves the model directly, the recipe expects the server flags `--enable-auto-tool-choice` and `--tool-call-parser`, which xref:admin/prerequisites.adoc[Check the prerequisites] explains.
 This guide doesn't cover setting up the model server itself.
 

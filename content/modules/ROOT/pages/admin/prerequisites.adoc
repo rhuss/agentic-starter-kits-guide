@@ -44,7 +44,8 @@ The recipe's deployment guide describes two setups: a vLLM server that OpenClaw 
 
 Whichever setup you use, the model has to support structured tool calling, because OpenClaw relies on it.
 Not every model does.
-Some emit raw JSON instead of calling the tool, and some make up tool results when a call fails silently.
+Some write the tool call as text in the reply instead of making a structured tool call, so no tool runs.
+Others fabricate a tool's result for a call that never ran.
 xref:reference/model-compatibility.adoc[Model compatibility] lists the models the recipe tested.
 
 === vLLM flags for tool calling

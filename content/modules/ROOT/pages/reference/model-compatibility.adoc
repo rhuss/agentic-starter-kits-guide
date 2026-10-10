@@ -63,8 +63,8 @@ It defines no thresholds for `Working`, `Partial`, or `Broken`.
 The gateway needs a model that makes structured tool calls through the native tool API.
 Not every model does, and the recipe names two failure modes.
 
-Some models emit raw JSON in the response body instead of calling the tool.
-Some fabricate tool results when a call fails silently.
+Some models write the tool call as text in the response body instead of making a native tool call, so no tool runs.
+Others fabricate a tool's result for a call that never ran, presenting made-up data as if a tool had returned it.
 
 [WARNING]
 ====
