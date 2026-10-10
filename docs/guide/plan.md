@@ -863,3 +863,64 @@ Rules:
     forbid:
       - '/data/\.openclaw'
 ```
+
+---
+
+### Task 32: Diagram `big-picture`
+
+Added 2026-10-10 with the spec's `## Why` card (cc-guide FR-043). Runs before Task 33.
+
+**Files:**
+- Create: `diagrams/big-picture.excalidraw`, `content/modules/ROOT/images/big-picture.svg`
+
+Shown on: `index` (Task 33). Follow the `guide:diagrams` skill.
+
+What it shows: the whole setup at a glance for a reader who knows neither OpenClaw nor OpenShell. No Kubernetes object detail (no Route, Service, PVC, ConfigMap, or init container; `deployment-architecture` covers those).
+
+Entities and palette:
+- User blue: "You, in the browser" (chat in the Control UI).
+- Platform gray: the OpenShift cluster as the outer boundary; the OpenClaw gateway as a Deployment ("OpenClaw: AI agent, Control UI, gateway"); the model server ("vLLM: your model, OpenAI-compatible API").
+- Governance orange: the OpenShell sandbox as a boundary around a second OpenClaw ("OpenShell sandbox: policy decides files, syscalls, network"), and its policy gate on the arrow that leaves the sandbox.
+- Admin red: "Experimental" marker on the sandbox path only.
+- Two labeled paths: "Deployment path (recommended)" and "Sandbox path (for experimentation)".
+
+Arrows: browser to the OpenClaw gateway ("chat over HTTPS"); browser to the sandboxed OpenClaw ("openshell forward start"); both OpenClaw instances to vLLM ("prompts go only to your model"), the sandbox arrow passing through the policy gate ("allowed by policy").
+
+Source hints: `starter-kits:agents/openclaw/deployment/README.md:12,17-20`, `starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml`, `starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml`, `starter-kits:agents/openclaw/deployment/Containerfile.openshell`, `starter-kits:agents/openclaw/templates/openclaw_agent/README.md:21`, `openshell:README.md:19,25`, `openclaw:README.md:18,20`.
+
+---
+
+### Task 33: `index` (Start here), rewritten to the why card
+
+Added 2026-10-10 (cc-guide FR-043). Replaces the Task 3 text of `content/modules/ROOT/pages/index.adoc`.
+
+Page: `content/modules/ROOT/pages/index.adoc`. Section: Overview, voice `conversational`. Persona: all. Internal: no. Follows `overview-contract.md`; the spec's `## Why` card is the content.
+
+Outline (start page shape):
+1. Outcome and problem: what the reader gets (an OpenClaw agent on OpenShift, chatting in the browser, answering with their own model on vLLM, no cluster-admin) and why that matters (an agent that acts for you holds credentials and runs commands).
+2. What the parts are: OpenClaw, OpenShell, vLLM, one definition each from their own sources. Define "gateway" and "Control UI" at first use.
+3. How they fit and why together, with the diagram `big-picture.svg`.
+4. Three ways to run it (raw manifests, claw-installer, OpenShell sandbox) in one or two sentences each, linking to `overview/choose-a-path`. No manifest lists, directory layout, overlays, digests, or base image details here.
+5. Status and limits: community image (the existing IMPORTANT block may stay, shortened), sandbox path for experimentation, single replica.
+6. Find your part of the guide (the three personas) and the baseline note.
+
+Facts to verify (source hints):
+- OpenClaw: `openclaw:README.md:18,20`, `openclaw:docs/start/why-openclaw.md:11-13,29,51`. Do not call it a coding assistant; list the recipe's description (`starter-kits:agents/openclaw/templates/openclaw_agent/README.md:5`) under Upstream candidates.
+- OpenShell: `openshell:README.md:19,25`, `openshell:docs/about/overview.mdx:11,21`.
+- Outcome and model endpoint: `starter-kits:agents/openclaw/deployment/README.md:12,17-20`, `starter-kits:README.md:11`.
+- Paths and status: `starter-kits:agents/openclaw/deployment/docs/installer-deployment.md:5`, `starter-kits:agents/openclaw/templates/openclaw_agent/README.md:21`, `starter-kits:agents/openclaw/deployment/README.md:5-10`, `starter-kits:agents/openclaw/deployment/docs/raw-deployment.md` (single replica).
+- Versions only through `{openclaw-version}` and `{openshell-version}`.
+
+Rules (replace nothing from Task 3; add):
+
+```yaml
+  - glob: "content/modules/ROOT/pages/index.adoc"
+    require:
+      - 'image::big-picture\.svg\['
+      - 'xref:overview/choose-a-path\.adoc'
+      - '\{openshell-version\}'
+    forbid:
+      - '(?i)coding assistant'
+      - 'The recipe describes'
+      - 'kustomization|overlays/'
+```

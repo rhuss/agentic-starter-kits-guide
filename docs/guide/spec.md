@@ -1,6 +1,23 @@
 # Guide spec: OpenClaw on OpenShift
 
-Status: approved design (2026-10-08). Run: `2026-10-08-create`. Format: Antora with Agent Starter Kits branding. Rigor: standard. No internal part.
+Status: approved design (2026-10-08). Run: `2026-10-08-create`. Format: Antora with Agent Starter Kits branding. Rigor: standard. No internal part. Why card added and approved by the author on 2026-10-10 (cc-guide FR-043).
+
+## Why
+
+The why card for the start page and the section overview pages (cc-guide `overview-contract.md`). Written for a reader who knows neither OpenClaw nor OpenShell.
+
+| Slot | Content | Sources |
+|---|---|---|
+| Problem | An AI agent that acts for you holds credentials, reads mail, and runs commands on real computers, so where it runs and what it may reach matters. Running one on your own platform usually means stitching the pieces together yourself. | `openclaw:docs/start/why-openclaw.md:11-13`, `starter-kits:README.md:11` |
+| Outcome | An OpenClaw agent on OpenShift that you chat with in the browser, answering with a model you serve yourself through vLLM, deployed with namespace-scoped access and no cluster-admin rights. | `starter-kits:agents/openclaw/deployment/README.md:12,17-20` |
+| Components: OpenClaw | An open-source AI agent that acts on your behalf. Its state, memory, and credentials stay on your own infrastructure, and the model behind it is a plugin you can swap. In this recipe you reach it through its web Control UI. | `openclaw:README.md:18,20`, `openclaw:docs/start/why-openclaw.md:11` |
+| Components: OpenShell | A runtime that runs AI agents in isolated sandboxes. A declared policy decides which files, system calls, and network destinations an agent may use, and the agent never sees real credentials. | `openshell:README.md:19,25`, `openshell:docs/about/overview.mdx:11,21` |
+| Components: vLLM | The OpenAI-compatible model server the recipe expects; any OpenAI-compatible endpoint works (vLLM, KServe, an external API). | `starter-kits:agents/openclaw/deployment/README.md:12,19` |
+| Fit | The OpenClaw gateway runs as a single-replica Deployment, serves the Control UI behind a Route, and calls your model endpoint. Alternatively, the same OpenClaw runs inside an OpenShell sandbox on the cluster, built from the recipe's `Containerfile.openshell`. | `starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml`, `starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml`, `starter-kits:agents/openclaw/deployment/Containerfile.openshell` |
+| Why this combination | Your prompts go only to the model provider you configure, and here that is your own model server. OpenClaw's own sandboxing is off by default; OpenShell adds policy-enforced isolation around the agent. | `openclaw:README.md:20`, `openclaw:docs/start/why-openclaw.md:29,51`, `openshell:README.md:19,25` |
+| Status and limits | The OpenClaw image is a community build, not built, scanned, or validated by Red Hat. The sandbox path is meant for experimentation. The gateway runs as one replica with no high availability. | `starter-kits:agents/openclaw/deployment/README.md:5-10`, `starter-kits:agents/openclaw/templates/openclaw_agent/README.md:21`, `starter-kits:agents/openclaw/deployment/docs/raw-deployment.md` |
+
+Upstream candidate: the recipe's agent description calls OpenClaw an "AI coding assistant" (`starter-kits:agents/openclaw/templates/openclaw_agent/README.md:5`), while OpenClaw's own README describes a general AI assistant (`openclaw:README.md:18`). The guide follows OpenClaw's own description.
 
 ## Purpose
 
@@ -73,7 +90,7 @@ Paths are relative to `content/modules/ROOT/pages/`.
 
 ### Overview (conversational)
 
-**`index`: OpenClaw on OpenShift.** What the recipe is: the OpenClaw gateway as a single-replica Deployment on OpenShift with a model served by vLLM, plus an OpenShell sandbox image. The three ways to run it (raw manifests, claw-installer, OpenShell sandbox) in one paragraph each, the support statement (OpenClaw is an upstream community image, not built or validated by Red Hat), the persona entry links, and the baseline note with the pinned versions from attributes.
+**`index`: OpenClaw on OpenShift.** Follows the start page shape of `overview-contract.md` and carries the `## Why` card (revised 2026-10-10): the outcome and the problem first; one definition each for OpenClaw, OpenShell, and vLLM from their own sources; how they fit and why together, with diagram 4; the three ways to run it (raw manifests, claw-installer, OpenShell sandbox) in one or two sentences each with a link to `overview/choose-a-path`; status and limits (community image, sandbox for experimentation, single replica); the persona entry links; the baseline note. Repository layout, manifest lists, image pins, and overlays stay on `overview/architecture` and `overview/choose-a-path`.
 
 **`overview/architecture`: How the deployment fits together.** What `oc apply -k manifests/` creates and how a request flows: Route (edge TLS) to Service to the gateway container; the init container that seeds `openclaw.json` once and moves old state; the PVC mounted at `/home/node` with state in `~/.openclaw`; the Secret and ConfigMap; the model endpoint; the optional OpenTelemetry collector sidecar sending traces to RHOAI MLflow. Explains why the PVC sits at `/home/node` and why the gateway starts through `args`. Shows diagram 1.
 
@@ -142,6 +159,7 @@ Paths are relative to `content/modules/ROOT/pages/`.
 | 1 | `deployment-architecture` | Route, Service, Pod with init container, gateway, and optional collector; PVC, ConfigMap, Secret; model endpoint; RHOAI MLflow | `overview/architecture` |
 | 2 | `config-state-lifecycle` | ConfigMap seed on first start, the PVC copy as source of truth, `config patch` through `oc exec`, the upgrade path through the init move and doctor | `admin/change-config` |
 | 3 | `sandbox-flow` | Workstation build and push, registry, OpenShell gateway, sandbox pod (supervisor, gateway on loopback, image policy), egress rule, `forward start` | `developer/run-in-sandbox` |
+| 4 | `big-picture` | The reader's browser, the OpenShift cluster with the OpenClaw gateway (Deployment path) and, alternatively, OpenClaw inside an OpenShell sandbox whose policy gates egress, and the self-served model on vLLM that both call; no Kubernetes object detail | `index` |
 
 ## Experimental content
 
