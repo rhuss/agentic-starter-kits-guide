@@ -141,7 +141,8 @@ findings:
     assistant that runs on your own computer and meets you in the channels you already
     use"; docs/start/why-openclaw.md:11 calls it an extensible, proactive, open-source
     AI agent.'
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 3c51062 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-11
   source: starter-kits
   kind: doc-drift
@@ -152,7 +153,8 @@ findings:
     enables no channels.
   evidence: 'agents/openclaw/deployment/manifests/02-configmap.yaml:22 sets `"channels":
     {}`.'
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 3c51062 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-12
   source: starter-kits
   kind: bug
@@ -167,7 +169,8 @@ findings:
     for any value other than unset or flow-import, load_agent_env_spec runs that check
     first (:249), and test_deploy_agents.py:198-206 asserts the error for exactly
     `config-driven`. Either implement the model or document it as catalog-only metadata.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 3c51062 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-13
   source: starter-kits
   kind: doc-drift
@@ -180,7 +183,8 @@ findings:
   evidence: agents/openclaw/deployment/README.md:67-77 lists the raw manifests (no
     OAuth proxy), manifests/02-configmap.yaml:18-20 sets gateway auth mode token,
     and only the installer path adds OAuth (docs/installer-deployment.md:5).
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 3c51062 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-14
   source: starter-kits
   kind: stale-reference
@@ -191,7 +195,8 @@ findings:
     manifests pin the 2026.9.8 digest.
   evidence: agents/openclaw/deployment/manifests/04-deployment.yaml:24 and :68 use
     `ghcr.io/openclaw/openclaw@sha256:d0ded1dd...`.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 3c51062 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-15
   source: starter-kits
   kind: bug
@@ -203,7 +208,8 @@ findings:
   evidence: openclaw src/gateway/known-weak-gateway-secrets.ts:7-10 rejects only `change-me-to-a-long-random-token`
     and `change-me-now`. Suggest a placeholder OpenClaw rejects, or an empty value,
     plus a generation hint such as `openssl rand -hex 32` at docs/raw-deployment.md:120.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 3c51062 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-16
   source: starter-kits
   kind: dead-config
@@ -217,7 +223,8 @@ findings:
     always sets VLLM_API_KEY. The tracing overlay already uses `"${VLLM_API_KEY}"`
     (overlays/mlflow-tracing/configmap-patch.yaml:36); docs/raw-deployment.md:82,104
     and overlays/example/configmap-patch.yaml:31 repeat `not-needed`.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 3c51062 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-17
   source: starter-kits
   kind: stale-reference
@@ -228,7 +235,8 @@ findings:
     every apply prints a deprecation warning.
   evidence: '`oc kustomize` and `oc apply -k` print "''commonLabels'' is deprecated.
     Please use ''labels'' instead." (observed live during the guide run).'
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 3c51062 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-18
   source: starter-kits
   kind: dead-config
@@ -470,7 +478,8 @@ findings:
   evidence: 'manifests/02-configmap.yaml:25 sets `"model": "vllm/YOUR-MODEL-ID"` and
     :34 declares provider `vllm`; claw-installer names its custom provider `endpoint`
     (src/server/deployers/k8s-helpers.ts:40).'
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 3c51062 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-35
   source: starter-kits
   kind: stale-reference
@@ -483,7 +492,8 @@ findings:
   evidence: raw-deployment.md:3 tests Qwen2.5-0.5B-Instruct and :5 gpt-oss-120b via
     OGX; mlflow-tracing.md:3 also tests Qwen2.5-0.5B-Instruct. Neither appears in
     the table at model-compatibility.md:9-16.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 3c51062 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-36
   source: starter-kits
   kind: stale-reference
@@ -495,7 +505,8 @@ findings:
   evidence: The raw deployment doc was retested on 2026-10-08 with OpenClaw 2026.9.8
     (raw-deployment.md:3); the installer doc's tables disagree with the installer
     code in several places (see the other installer-deployment.md findings).
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 3c51062 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-37
   source: starter-kits
   kind: naming-ux
@@ -509,7 +520,8 @@ findings:
     README uses.
   evidence: deployment README.md:100,105 call it claw-installer; claw-installer README.md:8
     clones `sallyom/openclaw-installer.git`. Both names refer to the same repository.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 3c51062 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-38
   source: starter-kits
   kind: stale-reference
@@ -522,7 +534,8 @@ findings:
     uses tsx and vite and its README recommends `./run.sh`.
   evidence: claw-installer package.json:33 runs `tsx watch src/server/index.ts` and
     `vite`; claw-installer README.md:5-14 starts it with `./run.sh`.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 3c51062 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-39
   source: starter-kits
   kind: doc-drift
@@ -534,7 +547,8 @@ findings:
     installer mounts the PVC at /home/node with state in /home/node/.openclaw.
   evidence: claw-installer src/server/deployers/k8s-manifests.ts:38-40 sets the mount
     to /home/node and the runtime dir to /home/node/.openclaw.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 3c51062 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-40
   source: starter-kits
   kind: doc-drift
@@ -546,7 +560,8 @@ findings:
     while the installer uses ubi9-minimal.
   evidence: claw-installer src/server/deployers/k8s-manifests.ts:833 uses `registry.access.redhat.com/ubi9-minimal:latest`
     for init-config; the gateway default is `ghcr.io/openclaw/openclaw:latest` (k8s-helpers.ts:36).
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 3c51062 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-41
   source: starter-kits
   kind: doc-drift
@@ -559,7 +574,8 @@ findings:
     gateway to 1Gi/250m requests and 4Gi/1 CPU limits; provider-plugins/openshift/templates/oauth-proxy-container.yaml:43-49
     sets oauth-proxy to 64Mi/50m requests and 128Mi/200m limits (the doc says 100m
     and 256Mi).
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 3c51062 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-42
   source: starter-kits
   kind: doc-drift
@@ -573,7 +589,8 @@ findings:
     mode: "token", token: gatewayToken }` into the OpenClaw config, and k8s-manifests.ts:322-334
     stores that config in ConfigMap openclaw-config. installer-deployment.md:309 also
     lists the token only in the Secret.'
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 3c51062 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-43
   source: starter-kits
   kind: missing-doc
@@ -585,7 +602,8 @@ findings:
     the recommended raw manifests too.
   evidence: manifests/04-deployment.yaml:8-10 sets replicas 1 and Recreate without
     a comment, and docs/raw-deployment.md has no replica or HA statement.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 3c51062 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-44
   source: starter-kits
   kind: doc-drift
@@ -596,7 +614,8 @@ findings:
     or StorageClass setting, not a PVC setting.
   evidence: A PVC has no reclaim policy; it is the bound PersistentVolume's persistentVolumeReclaimPolicy
     (openclaw docs/install/kubernetes.md:190). Doc imprecision.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 3c51062 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-45
   source: starter-kits
   kind: doc-drift
@@ -627,7 +646,8 @@ findings:
     the same doc says RHOAI 3.3.1 does not ship it.
   evidence: mlflow-tracing.md:129 says in the same bullet "RHOAI 3.3.1 does not ship
     this role; create it from the definition in [RBAC Setup]".
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 3c51062 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-47
   source: starter-kits
   kind: dead-config
@@ -639,7 +659,8 @@ findings:
   evidence: 'overlays/mlflow-tracing/otel-collector-config.yaml:63-67 defines only
     a `traces:` pipeline; live, the collector answered POST /v1/metrics with 404 and
     OpenClaw logged nothing. Fix: `metrics: false` or a metrics pipeline.'
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 3c51062 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-48
   source: starter-kits
   kind: missing-doc
@@ -652,7 +673,8 @@ findings:
     allowlist; doctor then warns "The device-pair plugin is not enabled; node onboarding
     join codes and openclaw connect are unavailable." (src/commands/doctor-node-hosting-preconditions.ts:91).
     Live, only three plugins loaded; Control UI login and pairing still worked.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 3c51062 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-49
   source: starter-kits
   kind: doc-drift
@@ -708,7 +730,8 @@ findings:
     patch (kustomization.yaml:13-24), unlike overlays/example/kustomization.yaml:18-24.
     mlflow-tracing.md:148 asks to edit the Secret file without a warning. The immutable-PVC
     apply failure is general Kubernetes knowledge, not verified here.
-  status: collected
+  status: fixed
+  fixed-in: "PR #373 commit 3c51062 (red-hat-data-services/agentic-starter-kits)"
 - id: UF-53
   source: starter-kits
   kind: doc-drift
