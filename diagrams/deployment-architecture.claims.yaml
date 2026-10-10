@@ -1,0 +1,233 @@
+diagram: deployment-architecture
+# What the scene diagrams/deployment-architecture.excalidraw asserts, as fact-checked on 2026-10-10.
+# Sources: starter-kits and openclaw are the pinned checkouts in .guide/cache/.
+# Live checks ran read-only against cluster cntbh (context default/api-cluster-cntbh-dyn-redhatworkshops-io:6443/admin).
+# openclaw-test has the mlflow-tracing overlay applied, openclaw-fresh only the base manifests.
+claims:
+  # --- frames ----------------------------------------------------------------
+  - id: ns-contains
+    kind: contains
+    elements: [ns, route, service, secret, pod, configmap, pvc, sa]
+    text: >-
+      The Route, Service, Secret, the Deployment's Pod, the ConfigMap openclaw-config and the PVC
+      live in the one namespace that `oc apply -k manifests/` targets; the overlay's ServiceAccount
+      and RoleBinding land in the same namespace. Browser, model endpoint, and RHOAI MLflow are not
+      created there (drawn outside).
+    sources:
+      - "starter-kits:agents/openclaw/deployment/manifests/kustomization.yaml:4-10"
+      - "starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/kustomization.yaml:5-11"
+      - "starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:13-15,141"
+      - "starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/otel-collector-config.yaml:47"
+      - "live:oc get deploy,pod,svc,route,pvc,cm,secret,sa,rolebinding -l app=openclaw -n openclaw-test and -n openclaw-fresh, cluster cntbh, 2026-10-10"
+  - id: pod-contains
+    kind: contains
+    elements: [pod, init, gateway, otel]
+    text: >-
+      The Deployment openclaw runs one Pod holding the init container init-config and the container
+      gateway; the tracing overlay adds the otel-collector container as a sidecar in the same Pod.
+    sources:
+      - "starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:4,8,21-22,65-66"
+      - "starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/deployment-patch.yaml:9-10,21"
+      - "starter-kits:agents/openclaw/deployment/docs/mlflow-tracing.md:35,196"
+      - "live:oc get deploy openclaw -o json (initContainers, containers) -n openclaw-test (init-config; gateway, otel-collector; pod 2/2) and -n openclaw-fresh (init-config; gateway; pod 1/1), cluster cntbh, 2026-10-10"
+
+  # --- frame titles (free text) ----------------------------------------------
+  - id: ns-title
+    kind: label
+    elements: [ns-title]
+    text: "Namespace (oc apply -k manifests/)"
+    sources:
+      - "starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:141"
+      - "starter-kits:agents/openclaw/deployment/manifests/kustomization.yaml:4-10"
+  - id: pod-title
+    kind: label
+    elements: [pod-title]
+    text: "Pod (Deployment openclaw)"
+    sources:
+      - "starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:2,4,8"
+
+  # --- boxes -----------------------------------------------------------------
+  - id: browser
+    kind: label
+    elements: [browser]
+    text: "Browser (Control UI): the Control UI is a browser app served by the gateway."
+    sources:
+      - "openclaw:docs/web/control-ui.md:11-13"
+      - "starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:167-169,192"
+  - id: route
+    kind: label
+    elements: [route]
+    text: "Route openclaw, edge TLS, forwarded headers off"
+    sources:
+      - "starter-kits:agents/openclaw/deployment/manifests/06-route.yaml:4,9-11,19-20"
+      - "live:oc get route -n openclaw-test (TERMINATION edge/Redirect), cluster cntbh, 2026-10-10"
+  - id: service
+    kind: label
+    elements: [service]
+    text: "Service openclaw, ClusterIP 18789"
+    sources:
+      - "starter-kits:agents/openclaw/deployment/manifests/05-service.yaml:4,10-15"
+      - "live:oc get svc -n openclaw-test (ClusterIP 18789/TCP), cluster cntbh, 2026-10-10"
+  - id: secret
+    kind: label
+    elements: [secret]
+    text: "Secret openclaw-secrets with keys OPENCLAW_GATEWAY_TOKEN and VLLM_API_KEY"
+    sources:
+      - "starter-kits:agents/openclaw/deployment/manifests/01-secret.yaml:2,4,10-11"
+  - id: init
+    kind: label
+    elements: [init]
+    text: "init-config is an init container"
+    sources:
+      - "starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:21-22"
+  - id: gateway
+    kind: label
+    elements: [gateway]
+    text: "The container gateway listens on port 18789"
+    sources:
+      - "starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:66,77-78"
+      - "starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:14-15"
+      - "openclaw:docs/gateway/index.md:104"
+  - id: otel
+    kind: label
+    elements: [otel]
+    text: "otel-collector, added by the tracing overlay (drawn dashed)"
+    sources:
+      - "starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/deployment-patch.yaml:21-23"
+      - "starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/kustomization.yaml:20-24"
+  - id: configmap
+    kind: label
+    elements: [configmap]
+    text: "ConfigMap openclaw-config carries openclaw.json"
+    sources:
+      - "starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:2,4,12"
+  - id: pvc
+    kind: label
+    elements: [pvc]
+    text: "PVC openclaw-state, mounted at /home/node"
+    sources:
+      - "starter-kits:agents/openclaw/deployment/manifests/03-pvc.yaml:2,4"
+      - "starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:54-55,97-99,138-140"
+      - "live:oc get deploy openclaw -o json (volumeMounts data at /home/node in init-config and gateway) -n openclaw-test and -n openclaw-fresh, cluster cntbh, 2026-10-10"
+  - id: sa
+    kind: label
+    elements: [sa]
+    text: "ServiceAccount openclaw-tracing and RoleBinding openclaw-tracing-mlflow, from the tracing overlay (drawn dashed)"
+    sources:
+      - "starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/rbac.yaml:13-15,20-22,29-31"
+      - "starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/kustomization.yaml:5-8"
+      - "live:oc get sa,rolebinding -l app=openclaw -n openclaw-test (openclaw-tracing, openclaw-tracing-mlflow), cluster cntbh, 2026-10-10"
+  - id: model
+    kind: label
+    elements: [model]
+    text: "Model endpoint: a vLLM server or an OGX gateway in front of vLLM, brought by the user"
+    sources:
+      - "starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:13-15"
+      - "starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:8-10,35"
+  - id: mlflow
+    kind: label
+    elements: [mlflow]
+    text: >-
+      RHOAI MLflow in namespace redhat-ods-applications on port 8443, a prerequisite run by RHOAI
+      (drawn dashed: only used with the tracing overlay)
+    sources:
+      - "starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/otel-collector-config.yaml:5-6,47"
+      - "starter-kits:agents/openclaw/deployment/docs/mlflow-tracing.md:29-31,43,127"
+      - "starter-kits:docs/mlflow-openshift-auth-and-tls.md:63"
+      - "live:oc get svc mlflow -n redhat-ods-applications (port 8443), cluster cntbh, 2026-10-10"
+
+  # --- arrows ----------------------------------------------------------------
+  - id: browser-route
+    kind: connects
+    elements: [a_browser_route]
+    text: The browser reaches OpenClaw through the Route's HTTPS address.
+    sources:
+      - "starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:181-192"
+  - id: route-service
+    kind: connects
+    elements: [a_route_service]
+    text: The Route sends traffic to the Service openclaw (target port gateway).
+    sources:
+      - "starter-kits:agents/openclaw/deployment/manifests/06-route.yaml:13-18"
+  - id: service-gateway
+    kind: connects
+    elements: [a_service_gateway]
+    text: The Service forwards port 18789 to port 18789 of the gateway container.
+    sources:
+      - "starter-kits:agents/openclaw/deployment/manifests/05-service.yaml:8-13"
+      - "starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:16-17,66,77-78"
+  - id: secret-gateway
+    kind: connects
+    elements: [a_secret_gateway]
+    text: "The Secret reaches the gateway container as environment variables (label: env)."
+    sources:
+      - "starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:87-96"
+      - "live:oc get deploy openclaw -o json (gateway env secretKeyRef openclaw-secrets) -n openclaw-test and -n openclaw-fresh, cluster cntbh, 2026-10-10"
+  - id: configmap-init
+    kind: connects
+    elements: [a_configmap_init]
+    text: >-
+      Only the init container mounts the ConfigMap (at /config); it copies openclaw.json once, only
+      when no copy exists yet (label: seeds openclaw.json once).
+    sources:
+      - "starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:42-53,97-99,134-137"
+  - id: init-pvc
+    kind: connects
+    elements: [a_init_pvc]
+    text: The init container writes onto the PVC (mounted at /home/node).
+    sources:
+      - "starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:35-50,54-55"
+  - id: gateway-pvc
+    kind: connects
+    elements: [a_gateway_pvc]
+    text: The gateway container mounts the PVC at /home/node and keeps its state there.
+    sources:
+      - "starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:81-84,97-99"
+  - id: gateway-otel
+    kind: connects
+    elements: [a_gateway_otel]
+    text: >-
+      With the overlay, the gateway sends telemetry over OTLP http/protobuf to the collector on
+      localhost:4318 (dashed).
+    sources:
+      - "starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/configmap-patch.yaml:50-66"
+      - "starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/deployment-patch.yaml:12-15,27-28"
+      - "starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/otel-collector-config.yaml:20-26"
+      - "openclaw:docs/gateway/opentelemetry.md:10-12"
+      - "openclaw:docs/gateway/config-observability.md:135"
+  - id: gateway-model
+    kind: connects
+    elements: [a_gateway_model]
+    text: The gateway calls the model endpoint through the OpenAI-compatible API (openai-completions).
+    sources:
+      - "starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:33-37"
+      - "openclaw:docs/providers/vllm.md:9,14-15"
+  - id: otel-mlflow
+    kind: connects
+    elements: [a_otel_mlflow]
+    text: >-
+      The collector exports traces to MLflow's /v1/traces endpoint, authenticated with the Pod's
+      ServiceAccount token as a bearer token (dashed).
+    sources:
+      - "starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/otel-collector-config.yaml:16-18,45-57,61-67"
+      - "starter-kits:agents/openclaw/deployment/docs/mlflow-tracing.md:25-27,35,52,242"
+
+  # --- legend ----------------------------------------------------------------
+  - id: legend-title
+    kind: legend
+    elements: [lg_title]
+  - id: legend-user
+    kind: legend
+    elements: [lg_user, lg_user_t]
+  - id: legend-platform
+    kind: legend
+    elements: [lg_platform, lg_platform_t]
+  - id: legend-governance
+    kind: legend
+    elements: [lg_governance, lg_governance_t]
+  - id: legend-admin
+    kind: legend
+    elements: [lg_admin, lg_admin_t]
+  - id: legend-dashed
+    kind: legend
+    elements: [lg_dashed, lg_dashed_t]

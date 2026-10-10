@@ -1,0 +1,172 @@
+# Claims for diagrams/big-picture.excalidraw (start page, visualizes the `## Why` card).
+# Pinned sources: starter-kits d25f4c7, openshell 6648bd0 (v0.1.2), openclaw fc23bc8.
+# Fact check: .superpowers/sdd/plan/factcheck-big-picture.md (round 2 finding fixed in round 3)
+diagram: big-picture
+claims:
+  # --- frames -------------------------------------------------------------------
+  - id: cluster-holds-both-paths
+    kind: contains
+    elements: [cluster, gateway, sandbox]
+    text: >-
+      Both ways of running OpenClaw live on the OpenShift cluster: the OpenClaw
+      gateway as a Deployment, and the OpenShell sandbox (OpenShell on Kubernetes
+      creates its sandbox resources in the cluster).
+    sources:
+      - "starter-kits:agents/openclaw/deployment/README.md:12,18,116,162"
+      - "starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:2,8"
+      - "openshell:docs/kubernetes/setup.mdx:21-26"
+
+  - id: model-not-deployed
+    kind: label
+    elements: [vllm]
+    text: >-
+      The model endpoint is a prerequisite the recipe does not deploy; OpenClaw
+      reaches it by URL. It is drawn apart from the cluster frame for that reason
+      only; the diagram states nothing about where it runs (it may run on this
+      cluster or elsewhere).
+    sources:
+      - "starter-kits:agents/openclaw/deployment/README.md:19,67-80"
+      - "starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:35"
+
+  - id: sandbox-holds-openclaw
+    kind: contains
+    elements: [sandbox, sb_openclaw]
+    text: OpenClaw runs as the agent inside the OpenShell sandbox.
+    sources:
+      - "starter-kits:agents/openclaw/deployment/README.md:112,128-130"
+      - "openshell:docs/about/architecture.mdx:30,46-47"
+
+  - id: cluster-holds-supervisor
+    kind: contains
+    elements: [cluster, gate]
+    text: >-
+      The OpenShell supervisor runs on the cluster in its own pod, outside the
+      sandbox: it sits on the trusted side of the boundary and makes the policy
+      decisions; the sandbox never does.
+    sources:
+      - "openshell:docs/about/architecture.mdx:30-32,41-44,100-104"
+      - "openshell:docs/kubernetes/setup.mdx:21-23"
+
+  # --- labels -------------------------------------------------------------------
+  - id: label-browser
+    kind: label
+    elements: [browser]
+    text: You use OpenClaw from your browser and chat in its Control UI.
+    sources:
+      - "openclaw:docs/web/control-ui.md:3,11"
+      - "starter-kits:agents/openclaw/deployment/README.md:133"
+
+  - id: label-cluster
+    kind: label
+    elements: [t_3]
+    text: The recipe targets an OpenShift cluster.
+    sources:
+      - "starter-kits:agents/openclaw/deployment/README.md:12,18"
+
+  - id: label-deployment-path
+    kind: label
+    elements: [t_4]
+    text: One way to run it is the recipe's deployment (manifests applied with oc).
+    sources:
+      - "starter-kits:agents/openclaw/deployment/README.md:22-31,67-77"
+
+  - id: label-gateway
+    kind: label
+    elements: [gateway]
+    text: OpenClaw is an AI agent; its gateway serves the Control UI.
+    sources:
+      - "openclaw:docs/start/why-openclaw.md:11"
+      - "openclaw:docs/web/control-ui.md:11"
+      - "starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:66,78"
+
+  - id: label-sandbox-path
+    kind: label
+    elements: [t_7]
+    text: The OpenShell sandbox mode is for experimentation.
+    sources:
+      - "starter-kits:agents/openclaw/templates/openclaw_agent/README.md:21"
+
+  - id: label-sandbox
+    kind: label
+    elements: [t_9]
+    text: In an OpenShell sandbox, a policy decides file access, system calls, and network connections.
+    sources:
+      - "openshell:README.md:19,23,25"
+
+  - id: label-sb-openclaw
+    kind: label
+    elements: [sb_openclaw]
+    text: The sandboxed agent is the same OpenClaw, installed into the sandbox image.
+    sources:
+      - "starter-kits:agents/openclaw/deployment/Containerfile.openshell:31-33"
+      - "starter-kits:agents/openclaw/deployment/README.md:112"
+
+  - id: label-gate
+    kind: label
+    elements: [gate]
+    text: >-
+      "OpenShell supervisor / policy check, own pod": the supervisor checks requests
+      against policy and, on Kubernetes, runs in its own pod.
+    sources:
+      - "openshell:docs/about/architecture.mdx:32,104"
+
+  - id: label-model
+    kind: label
+    elements: [vllm]
+    text: "Your model endpoint / vLLM, KServe, or an external API."
+    sources:
+      - "starter-kits:agents/openclaw/deployment/README.md:19"
+
+  # --- arrows -------------------------------------------------------------------
+  - id: conn-chat
+    kind: connects
+    elements: [a_chat]
+    text: The browser reaches the OpenClaw gateway over HTTPS (Route with TLS edge termination).
+    sources:
+      - "starter-kits:agents/openclaw/deployment/manifests/06-route.yaml:12-21"
+      - "starter-kits:agents/openclaw/deployment/README.md:35-53"
+
+  - id: conn-forward
+    kind: connects
+    elements: [a_forward]
+    text: The browser reaches the sandboxed OpenClaw through a port forward started with `openshell forward start`.
+    sources:
+      - "starter-kits:agents/openclaw/deployment/README.md:133-137"
+      - "openshell:docs/how-it-works/sandboxes/overview.mdx:662-668"
+
+  - id: conn-prompts
+    kind: connects
+    elements: [a_prompts]
+    text: >-
+      The gateway sends prompts to your model endpoint, and only there: OpenClaw sends
+      prompts to the providers and chat platforms you configure, and the recipe configures
+      the vLLM provider alone and no channels.
+    sources:
+      - "openclaw:README.md:20"
+      - "starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:22,31-35"
+      - "starter-kits:agents/openclaw/deployment/README.md:59-64"
+
+  - id: conn-to-gate
+    kind: connects
+    elements: [a_to_gate]
+    text: >-
+      The sandboxed agent's network requests leave the sandbox only to the
+      supervisor, which checks them against policy.
+    sources:
+      - "openshell:docs/about/architecture.mdx:83-92"
+
+  - id: conn-allowed
+    kind: connects
+    elements: [a_allowed]
+    text: >-
+      Only traffic the policy allows reaches the model endpoint; egress is denied by
+      default until a rule for the endpoint is added.
+    sources:
+      - "openshell:docs/about/architecture.mdx:86-92"
+      - "openshell:docs/security/best-practices.mdx:42-48"
+      - "starter-kits:agents/openclaw/deployment/README.md:139-148"
+
+  # --- legend -------------------------------------------------------------------
+  - id: legend
+    kind: legend
+    elements: [t_25, leg_26, t_27, leg_28, t_29, leg_30, t_31]
