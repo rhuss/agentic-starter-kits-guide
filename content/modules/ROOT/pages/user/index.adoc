@@ -1,17 +1,39 @@
 = User guide
 
 // Sources:
-// openclaw:docs/web/control-ui.md:2-3,11,184
+// openclaw:README.md:18,20
+// openclaw:docs/start/why-openclaw.md:11,13
+// openclaw:docs/concepts/agent-workspace.md:10-11
+// openclaw:docs/tools/index.md:41-49
+// openclaw:docs/web/control-ui.md:2-3,11,23,184
+// starter-kits:agents/openclaw/deployment/README.md:12
+// starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:22,52-57
 // starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:177,179,192,201
 
-Welcome.
-This deployment runs an OpenClaw agent for you, and you talk to it from your browser.
+This section takes you from a web address and a token to a working chat with an AI agent that your team runs for you.
+All you need is a browser; you don't need any access to the cluster.
 
-== What you can do here
+== What OpenClaw is
 
-OpenClaw's Control UI is a web app that the gateway serves, so it opens right in your browser and there's nothing to install.
-From it you chat with the agent and follow the work it does.
-Your administrator sets up the deployment, and you connect to it as a user.
+OpenClaw is an open-source AI agent.
+An agent does more than answer questions: it acts on your behalf by calling tools, which are functions that let it read data, change files, or run commands.
+An agent that acts for you can hold credentials and run commands on real computers, so where it runs and what it may reach matter.
+
+You reach OpenClaw through its gateway, the OpenClaw process that runs the agent on the cluster.
+The gateway serves the Control UI, a web app that opens right in your browser, so there's nothing to install.
+From the Control UI you chat with the agent and follow the work it does.
+
+== What the agent can do here
+
+The agent has a workspace, the working directory its file tools use, so it can read and change files there for you.
+It can call the tools your team allows.
+This deployment switches off web search, web fetch, and browser tools, and it connects no messaging channels, so the Control UI is the only way to reach the agent.
+
+== Why it runs on your team's platform
+
+Your team runs OpenClaw on its own OpenShift cluster, and this deployment is built to use a model that your team serves there.
+That keeps the agent's state, memory, and credentials on your team's own infrastructure.
+Your prompts go to the model provider your team configured, plus any diagnostics export it turns on, and OpenClaw has no hosted service of its own that would receive them.
 
 == What to ask your administrator for
 
@@ -24,8 +46,9 @@ The gateway token::
 You paste this token when the Control UI asks you to connect, and it's what lets you in.
 
 Approval for your browser::
-When a browser that is not on the cluster connects, the gateway asks for that connection to be approved.
+When you open the deployment's web address on the cluster, the gateway treats your browser as a remote connection and asks for it to be approved.
 Your administrator approves it, and then you reach the chat.
+When your administrator forwards the gateway to your own machine and you open a `localhost` address instead, the gateway approves your browser on its own.
 
 Once you have the address, paste the token, and your browser is approved, the chat interface is ready to use.
 
@@ -35,4 +58,4 @@ Work through these pages in order.
 
 . xref:user/connect.adoc[Connect and pair your browser] opens the address, pastes the token, and gets your browser approved.
 . xref:user/first-chat.adoc[Hold your first conversation] sends your first message and reads the reply.
-. xref:user/whats-enabled.adoc[What this deployment can and cannot do] covers the capabilities this deployment turns on.
+. xref:user/whats-enabled.adoc[What this deployment can and cannot do] explains what this deployment switches off, such as web search and messaging channels, and what to ask your administrator for when you need one of them.

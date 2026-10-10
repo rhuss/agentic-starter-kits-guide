@@ -5,7 +5,7 @@
 // claw-installer:README.md:94-100
 // claw-installer:README.md:108-119
 // claw-installer:run.sh:29-37
-// claw-installer:run.sh:181-234
+// claw-installer:run.sh:181-260
 // claw-installer:run.sh:304-342
 // claw-installer:package.json:32-34
 // claw-installer:provider-plugins/openshift/docs/deploy-openshift.md:17-19
@@ -25,11 +25,15 @@
 // claw-installer:src/server/deployers/k8s-manifests.ts:619-632
 // claw-installer:src/server/deployers/k8s-manifests.ts:833
 // claw-installer:src/server/deployers/k8s-manifests.ts:858-902
-// claw-installer:src/server/deployers/k8s-helpers.ts:36-39
+// claw-installer:src/client/components/deploy-form/constants.ts:18
+// claw-installer:src/client/components/deploy-form/ProviderSection.tsx:1191-1260
+// claw-installer:src/server/index.ts:278-289
+// claw-installer:src/server/deployers/k8s-helpers.ts:36-40,424-426
 // claw-installer:src/server/deployers/k8s-helpers.ts:935-938
 // claw-installer:src/server/deployers/kubernetes.ts:153
 // claw-installer:src/server/deployers/kubernetes.ts:410-415
 // claw-installer:src/server/deployers/kubernetes.ts:510-515
+// starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:108-109
 // openclaw:docker-entrypoint.mjs:72-116
 // openclaw:docs/install/docker.md:247-249
 
@@ -51,8 +55,8 @@ The OpenShift provider plugin is detected only when you are logged in to an Open
 * Permission to self-provision projects, or an existing project where you have edit access.
 If the target project does not exist, the installer creates it through the OpenShift `ProjectRequest` API.
 With namespace-scoped access only, enter your existing project name in the deploy form.
-* `podman` and Node.js on the machine that runs the installer.
-On macOS the launcher runs the app natively with Node.js, and on Linux it runs the app as a container against the rootless podman socket.
+* `podman` on the machine that runs the installer, and on macOS also Node.js with npm.
+On macOS the launcher builds the app from your clone with npm and runs it natively with Node.js, and on Linux it runs the app as a container against the rootless podman socket.
 * A credential for at least one model provider, such as the endpoint URL for a self-hosted vLLM server.
 * A block storage class (for example `gp3-csi`, `managed-csi`, or `thin-csi`), not NFS, because OpenClaw's SQLite state needs POSIX file locking.
 
@@ -73,9 +77,10 @@ No separate installation step is needed.
 
 . Clone the repository and run the launcher.
 +
-The launcher pulls the installer image `quay.io/sallyom/openclaw-installer:latest`, listens on port 3000, and keeps its state under `~/.openclaw`.
-On macOS with podman it extracts the built app from that image and runs it with your local Node.js, because podman socket forwarding is unreliable across the macOS virtual machine backends.
-On Linux with podman it runs the container against the rootless podman socket and mounts `~/.kube` read-only so cluster detection uses the same kubeconfig as a native run.
+The launcher listens on port 3000 and keeps its state under `~/.openclaw`.
+On Linux with podman it pulls the installer image `quay.io/sallyom/openclaw-installer:latest` if it isn't there yet, runs it as a container against the rootless podman socket, and mounts `~/.kube` read-only so cluster detection uses the same kubeconfig as a native run.
+On macOS with podman it runs the app natively instead, because podman socket forwarding into containers is not reliably supported across the macOS virtual machine backends.
+From a clone, it installs the dependencies with `npm ci` on the first run, builds the app with `npm run build`, and starts it with your local Node.js.
 +
 [source,bash]
 ----
@@ -110,6 +115,11 @@ When unchecked, the installer replaces the gateway container's startup command w
 When checked, the installer keeps the image's own startup script and provides the Route URL to the image as `OPENCLAW_PUBLIC_URL`.
 Check this box only for images whose entrypoint must configure and start the gateway themselves, such as a policy image.
 This choice also decides whether the image's `doctor --fix` activation runs on each start, which the CAUTION below explains.
+
+Model Endpoint:: The provider choice for a self-hosted, OpenAI-compatible model server such as vLLM.
+Enter the server's URL in *OpenAI-Compatible Model Endpoint* and the model ID in *OpenAI-Compatible Model Name*.
+*Fetch Models* asks the endpoint for its models, so you can pick the ID from a list.
+If you paste only the service URL, the installer normalizes it to a `/v1` API base.
 
 Sandbox backend:: Optional.
 Choose OpenShell (which needs a provisioned OpenShell gateway, see xref:admin/install-openshell.adoc[Install OpenShell for sandboxes]) or SSH (which needs a remote sandbox host).
@@ -174,7 +184,7 @@ The raw manifests seed that file only once.
 Any change you make with `config patch` is overwritten on the next restart unless you also update the ConfigMap `openclaw-config`.
 * Unless you check "Use image entrypoint", the installer replaces the gateway command with `sh -c "umask 007 && exec node dist/index.js gateway run --bind loopback --port 18789"`.
 A replaced command bypasses the image entrypoint's `doctor --fix` activation step, which repairs state and runs migrations before the gateway starts.
-Check "Use image entrypoint" to keep the image's own startup script and that activation step.
+The installer's docs reserve "Use image entrypoint" for images that need their own startup script, so with the installer's command in place, run doctor against the same state yourself before the gateway starts on a new image, as OpenClaw's Docker documentation asks when an entrypoint is replaced.
 * The gateway token is written in plaintext into ConfigMap `openclaw-config` (inside `openclaw.json`), in addition to Secret `openclaw-secrets`.
 A ConfigMap does not have the access controls of a Secret.
 * The gateway liveness and readiness probes make an HTTP request to `/` and treat any status below 400 as healthy.

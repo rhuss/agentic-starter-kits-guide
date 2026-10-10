@@ -120,8 +120,12 @@ claims:
   - id: model
     kind: label
     elements: [model]
-    text: "Model endpoint: a vLLM server or an OGX gateway in front of vLLM, brought by the user"
+    text: >-
+      Model endpoint, brought by the user: vLLM, KServe, or an external API (README prerequisite);
+      the two documented setups are a direct vLLM server or an OGX gateway in front of vLLM, and
+      the ConfigMap's baseUrl points at either.
     sources:
+      - "starter-kits:agents/openclaw/deployment/README.md:19"
       - "starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:13-15"
       - "starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:8-10,35"
   - id: mlflow

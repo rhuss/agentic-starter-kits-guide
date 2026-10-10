@@ -5,6 +5,8 @@
 // openclaw:docs/web/control-ui/connect-and-pair.md:15,30,42,44,49,53-54
 // openclaw:ui/src/i18n/locales/en-login.ts:7-14,59-77,97-104,105-122
 // openclaw:ui/src/i18n/locales/en-settings.ts:329-330
+// openclaw:src/gateway/server/ws-connection/auth-messages.ts:78-79
+// starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:179,192
 // starter-kits:agents/openclaw/deployment/docs/troubleshooting.md:299-335
 
 The Control UI is a web app that the gateway serves, so it opens right in your browser with nothing to install.
@@ -36,7 +38,7 @@ How the approval happens depends on the address you opened.
 
 If the address is a local one on your own machine, such as `http://localhost:18789` that your administrator brought to your machine with a port-forward, the gateway approves your browser on its own and the chat opens.
 
-If the address reaches the gateway from outside the cluster, the login screen shows *Approve this browser* and reports `disconnected (1008): pairing required`.
+If the address is the deployment's web address on the cluster, your browser is not a local connection to the gateway, so the login screen shows *Approve this browser* and reports `disconnected (1008): pairing required`.
 Your administrator approves the request for you.
 Keep the page open while you wait.
 It retries on its own and connects once the request is approved, and *Check now* lets you retry straight away.
@@ -89,7 +91,7 @@ To stay paired across restarts, use an ordinary, persistent browser profile rath
 
 == A browser that keeps being turned away
 
-If your browser keeps failing to connect even with the right token, and you see *Too many failed attempts* or the message *Too many failed authentication attempts (retry later)*, the gateway has rate-limited your browser.
+If your browser keeps failing to connect even with the right token, and you see *Too many failed attempts* or the message `unauthorized: too many failed authentication attempts (retry later)`, the gateway has rate-limited your browser.
 This happens after a browser sends an out-of-date saved token several times, for example after the deployment's device pairings were reset.
 Once the limit kicks in, the gateway turns the browser away even after the underlying token is fixed.
 

@@ -17,7 +17,7 @@
 // openclaw:src/cli/gateway-cli/run.ts:548,765,862
 // openclaw:src/gateway/server-startup-log.ts:41-82,123-127,181,261-277
 // openclaw:src/gateway/server-startup-readiness.ts:9-12
-// openclaw:src/logging/subsystem.ts:185-233
+// openclaw:src/logging/subsystem.ts:79-100,185-233,236-262
 // openclaw:src/agents/model-selection-shared.ts:652-665
 
 With the ConfigMap, the Secret, and the storage class prepared, the deployment itself is short.
@@ -168,13 +168,14 @@ The `http server listening` line names the loaded plugins and the startup time, 
 If the doctor pass prints anything, it comes before the gateway's lines, because the entrypoint runs doctor first.
 To check the two lines that matter, filter the whole log for them.
 +
-Check: the output has an `agent model` line with your model reference and the line `[gateway] ready`.
+Check: the output has an `agent model` line with your model reference and a `[gateway] ready` line.
+The gateway writes its log in color, so the raw output holds color codes around `[gateway]` and the message, and other lines that contain the word `ready` may appear as well.
 +
 [source,bash]
 ----
 oc logs deployment/openclaw -c gateway -n my-openclaw | grep -E "agent model|ready"
 ----
-// expect: contains "agent model:" and contains "[gateway] ready"
+// expect: contains "agent model:" and matches /\[gateway\]\S* \S*ready\S*$/
 
 . Compare the `agent model` line with your configuration.
 The line shows the model reference from `agents.defaults.model` in the `openclaw.json` that the gateway loaded.

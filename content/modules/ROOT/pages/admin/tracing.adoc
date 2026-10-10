@@ -15,6 +15,7 @@
 // starter-kits:agents/openclaw/deployment/manifests/03-pvc.yaml:12
 // starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:45-50
 // starter-kits:docs/mlflow-openshift-auth-and-tls.md:7,86-88,96-122,158,184-191
+// starter-kits:docs/llm-d-deployment.md:110,186
 // openclaw:docs/gateway/opentelemetry/setup.md:44-48
 // openclaw:docs/gateway/opentelemetry/configuration.md:19-21,26-28
 // openclaw:docs/gateway/opentelemetry/spans-and-events.md:29,32-35,41,45-46,53-54,60,66-68
@@ -143,6 +144,19 @@ oc get service mlflow -n redhat-ods-applications
 ----
 // expect: exit 0 and contains "mlflow"
 
+. Find out how MLflow is exposed outside the cluster.
+The recipe's commands expect a Route `mlflow`.
+On RHOAI 3.3.1, MLflow has no Route; the MLflow operator exposes it through the HTTPRoute `mlflow`, which attaches to the Gateway `data-science-gateway` in `openshift-ingress` and forwards the paths `/mlflow`, `/mlflow/api`, and `/mlflow/v1` to the `mlflow` Service.
++
+Check: on RHOAI 3.3.1, the output names the Gateway `openshift-ingress/data-science-gateway`.
+On a setup with a Route instead, `oc` reports that the HTTPRoute `mlflow` is not found.
++
+[source,bash]
+----
+oc get httproute mlflow -n redhat-ods-applications -o jsonpath='{.spec.parentRefs[0].namespace}/{.spec.parentRefs[0].name}{"\n"}'
+----
+// expect: contains "openshift-ingress/data-science-gateway"
+
 [#create-clusterrole]
 === Create the ClusterRole where it's missing
 
@@ -181,7 +195,7 @@ EOF
 The overlay expects RHOAI in `redhat-ods-applications`.
 If your RHOAI runs in another namespace, the comment at the top of the overlay's `otel-collector-config.yaml` asks you to change the `otlphttp` endpoint accordingly.
 Replace `redhat-ods-applications` in `https://mlflow.redhat-ods-applications.svc.cluster.local:8443` with that namespace.
-The MLflow Route lookups on this page and the Service check in _Before you start_ name `redhat-ods-applications` too, so use your namespace there as well.
+The MLflow Route and HTTPRoute lookups on this page and the Service check in _Before you start_ name `redhat-ods-applications` too, so use your namespace there as well.
 
 == Copy the overlay
 
@@ -247,6 +261,15 @@ Experiment IDs are counted per workspace: an experiment that exists in one works
 
 `oc create token` issues a short-lived token, valid for one hour by default.
 Each listing below creates a fresh token, so each one runs on its own.
+The listings reach MLflow through its Route, as the recipe's do.
+
+[WARNING]
+====
+On RHOAI 3.3.1, MLflow has no Route `mlflow`, so the first line of each listing below finds no host.
+The Gateway `data-science-gateway` that serves MLflow there has an OAuth proxy meant for browser access, and the starter kits' own llm-d guide notes that it blocks programmatic API calls.
+On this guide's test cluster with RHOAI 3.3.1, MLflow API calls with a bearer token through that Gateway were turned away: a user token got HTTP 403, and a token of the ServiceAccount `openclaw-tracing` got a redirect to the login page.
+This guide has no verified way yet to create the experiment through the API on RHOAI 3.3.1.
+====
 
 . Create the experiment `openclaw-tracing` in the workspace `my-openclaw`.
 +
@@ -317,7 +340,7 @@ The overlay builds on the base manifests and patches only the ConfigMap and the 
 
 * The Secret `openclaw-secrets` comes from `manifests/01-secret.yaml`.
 Enter your gateway token and API key there, as xref:admin/configure-model.adoc[Configure the model endpoint and secrets] shows.
-`oc apply -k` writes this file into the Secret, also for a deployment that runs already, so placeholders left in it replace your values.
+The tracing overlay lists `manifests/` among its resources, so `oc apply -k overlays/my-tracing` applies this file as well.
 * The storage class comes from `manifests/03-pvc.yaml`, which ships with `gp3-csi`.
 The tracing overlay has no PersistentVolumeClaim patch like the one in `overlays/example/kustomization.yaml`.
 If you set the storage class through such a patch in `overlays/my-env/kustomization.yaml`, as xref:admin/configure-model.adoc[Configure the model endpoint and secrets] shows, add the same patch to `overlays/my-tracing/kustomization.yaml`.
@@ -517,17 +540,25 @@ oc logs deployment/openclaw -c otel-collector -n my-openclaw --tail=20
 ----
 // expect: not-contains "Status Code 404"
 
-. Look up the host name of the MLflow Route.
+. Look up the address of the MLflow UI.
+On RHOAI 3.3.1, the MLflow operator adds a link named `mlflow` to the application menu of the OpenShift console, and that link holds the address.
 +
-Check: the command prints a host name.
+Check: the command prints an HTTPS address that ends in `/mlflow`.
++
+[source,bash]
+----
+oc get consolelink mlflow -o jsonpath='{.spec.href}{"\n"}'
+----
+// expect: exit 0 and matches /^https:\/\/\S+\/mlflow$/
++
+On a setup with a Route `mlflow`, the recipe looks up the host name of that Route instead, and MLflow is at `/mlflow` on that host:
 +
 [source,bash]
 ----
 oc get route mlflow -n redhat-ods-applications -o jsonpath='{.spec.host}'
 ----
-// expect: exit 0 and matches /\./
 
-. Open MLflow, through the RHOAI dashboard or at that host, and go to the experiment `openclaw-tracing` in your workspace `my-openclaw`.
+. Open MLflow, through the RHOAI dashboard or at that address, and go to the experiment `openclaw-tracing` in your workspace `my-openclaw`.
 +
 Check: the experiment lists a trace for your message, with `openclaw.message.processed` as its root span.
 
@@ -584,3 +615,7 @@ The device-pair plugin is not enabled; node onboarding join codes and openclaw c
 The Control UI, browser pairing, and the `devices` commands from xref:admin/access.adoc[Open the Control UI] keep working.
 If you need node onboarding, or any other plugin outside the list, add its ID to `plugins.allow` (and enable it if it isn't on by default) and keep `diagnostics-otel` in it.
 For `device-pair`, doctor's hint ends with a gateway restart after the change.
+
+== Where to go next
+
+With traces arriving, continue with xref:admin/maintain.adoc[Back up, upgrade, and remove] to keep the deployment healthy over time.

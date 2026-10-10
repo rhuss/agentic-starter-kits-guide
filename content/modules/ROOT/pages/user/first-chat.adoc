@@ -23,8 +23,9 @@ Check: your message appears in the conversation, and the agent starts a reply.
 While the agent is working, a working indicator shows that the turn is running.
 When the turn finishes, its tool activity collapses under a *Worked for* heading above the answer.
 That heading also shows how many tool calls the agent made and how many of them failed, for example a count of 200 tool calls with 20 failed.
+A turn without tool calls leaves the count out.
 +
-Check: the agent's reply appears in the conversation, with a *Worked for* summary above it when the agent used any tools.
+Check: the agent's reply appears in the conversation, and when the agent used tools, the heading above the answer shows its tool-call count.
 
 == Start a new conversation
 

@@ -1,10 +1,11 @@
 = What this deployment can and cannot do
 
 // Sources:
-// starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:22-28,51-57
+// starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:14-28,51-57
 // starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/configmap-patch.yaml:21-26,68-73
 // openclaw:docs/gateway/sandbox-vs-tool-policy-vs-elevated.md:36,73,103-104
 // openclaw:docs/gateway/heartbeat.md:16-18,96-97,109-113,349
+// openclaw:docs/gateway/configuration/hot-reload.md:13-14,64
 
 OpenClaw can do a lot more than this deployment lets it.
 The recipe ships a focused configuration that turns several features off, so the agent stays inside the boundaries your team set for it.
@@ -18,7 +19,7 @@ Denying `browser` removes the tool that would let the agent drive a web browser 
 
 In practice this means the agent cannot search the web, open a web page, or control a browser for you.
 A denied tool is a hard stop: even if the model tries to call one, the gateway refuses it, because a deny rule always wins.
-If you ask the agent to look something up online, expect it to work from what it already knows rather than from a live search.
+If you ask the agent to look something up online, it has no web tool to call.
 
 == No messaging channels
 
@@ -51,5 +52,6 @@ Every setting on this page lives in the gateway's configuration, and an administ
 If you need a feature that is currently off, that is who to ask.
 
 For example, an administrator can allow a web tool you need, connect a messaging channel, turn on sandboxing, or set up heartbeat delivery.
-The steps for changing a running gateway, and the restart that makes a change take effect, are in xref:admin/change-config.adoc[Change the configuration of a running gateway].
+Most settings apply to the running gateway without a manual restart, and the gateway restarts by itself when a change needs it.
+The steps are in xref:admin/change-config.adoc[Change the configuration of a running gateway].
 When you ask, name the specific tool or feature you want, so the administrator knows exactly which setting to adjust.

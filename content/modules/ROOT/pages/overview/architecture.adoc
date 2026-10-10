@@ -1,6 +1,7 @@
 = How the deployment fits together
 
 // Sources:
+// starter-kits:agents/openclaw/deployment/README.md:19
 // starter-kits:agents/openclaw/deployment/manifests/kustomization.yaml:4-10
 // starter-kits:agents/openclaw/deployment/manifests/01-secret.yaml:4,10-11
 // starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:4,12-20,25,31-47,52-57
@@ -62,7 +63,8 @@ The file `manifests/kustomization.yaml` lists six resources, and `oc apply -k ma
 |===
 
 Notice what's missing: the model.
-You bring your own vLLM-compatible endpoint, either a vLLM server or an OGX gateway in front of vLLM.
+You bring your own OpenAI-compatible endpoint, which can be vLLM, KServe, or an external API.
+The recipe's deployment guide describes two setups: a vLLM server that OpenClaw calls directly, or an OGX gateway in front of vLLM.
 
 == Follow a request from the browser to the model
 
@@ -175,7 +177,8 @@ None of them probes `/`, because the Control UI answers unknown paths with 200.
 
 OpenClaw emits OpenTelemetry traces on its own, through its `diagnostics-otel` plugin.
 The `mlflow-tracing` overlay collects them and sends them to the shared MLflow instance of Red Hat OpenShift AI (RHOAI).
-It builds on the base manifests, replaces `openclaw.json` in the ConfigMap `openclaw-config`, patches the Deployment, and adds resources of its own:
+It builds on the base manifests, replaces `openclaw.json` in the ConfigMap `openclaw-config`, patches the Deployment, and adds resources of its own.
+In detail:
 
 * The new `openclaw.json` enables the `diagnostics-otel` plugin and points it at `http://localhost:4318`.
 * An `otel-collector` sidecar joins the Pod, with its configuration in the new ConfigMap `otel-collector-config`.

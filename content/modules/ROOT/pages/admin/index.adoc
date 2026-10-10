@@ -1,7 +1,8 @@
 = Administrator guide
 
 // Sources:
-// starter-kits:agents/openclaw/deployment/README.md:18-20,59-63,86-89,116
+// starter-kits:README.md:11
+// starter-kits:agents/openclaw/deployment/README.md:12,17-20,59-63,86-89,116
 // starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:11-15,22,27-31,46-59,116-134,138-165,169-201,205-213,215-241
 // starter-kits:agents/openclaw/deployment/docs/installer-deployment.md:5
 // starter-kits:agents/openclaw/deployment/docs/model-compatibility.md:5,11
@@ -12,11 +13,16 @@
 // starter-kits:agents/openclaw/deployment/manifests/01-secret.yaml:10-11
 // starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:8-11,35-37
 // starter-kits:agents/openclaw/deployment/manifests/03-pvc.yaml:4,8-15
-// starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:42-50,81-84,97-99,138-140
+// starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:8,24,42-50,68-76,81-84,97-99,138-140
 // starter-kits:agents/openclaw/deployment/manifests/06-route.yaml:4,12-21
 // starter-kits:agents/openclaw/deployment/overlays/example/kustomization.yaml:5-9,18-24
 // starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/kustomization.yaml:5-8,13-24
 // starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/rbac.yaml:12-31
+// openclaw:README.md:18,20
+// openclaw:docs/start/why-openclaw.md:11,13
+// openclaw:docs/web/control-ui.md:11-13
+// openclaw:docker-entrypoint.mjs:72-116
+// openshell:README.md:19,25
 // openshell:docs/kubernetes/setup.mdx:44,50,70-71
 // openshell:docs/kubernetes/openshift.mdx:41,51-61,76-84
 // openshell:deploy/helm/openshell/templates/clusterrole.yaml:5-8
@@ -25,7 +31,20 @@
 // claw-installer:provider-plugins/openshift/docs/deploy-openshift.md:3
 
 This part of the guide is for the person who deploys OpenClaw on OpenShift and keeps it running.
-It follows the raw manifests, the path the recipe recommends, and assumes you're at home with `oc` and Kustomize.
+OpenClaw is an open-source AI agent that acts on your behalf and keeps its state, memory, and credentials on infrastructure you control.
+An agent like that holds credentials and runs commands, so where it runs and what it may reach matters.
+Running one on your own platform usually means stitching the pieces together yourself, and the OpenClaw recipe in the Agentic Starter Kits does that stitching with a set of Kubernetes manifests.
+
+At the end of this section, OpenClaw runs in your namespace as a Deployment with one replica, and you chat with it in the browser through its web Control UI.
+It answers with a model you serve yourself behind an OpenAI-compatible endpoint, such as a vLLM server, which you provide.
+The deployment itself needs access to a single namespace and no cluster-admin rights.
+Your prompts go only to the model provider you configure, which here is your own model server.
+
+The section follows the raw manifests, the path the recipe recommends, rather than claw-installer.
+The manifests pin the OpenClaw image by digest, so the version you run changes only when you change the digest.
+They start the gateway through the image's entrypoint, so `openclaw doctor --fix` migrates the state before every new image takes over.
+And after the first start, the configuration lives on the PersistentVolumeClaim (PVC), where you change it with `config patch` and a restart doesn't undo your changes.
+The pages assume you're at home with `oc` and Kustomize.
 If you haven't picked a path yet, xref:overview/choose-a-path.adoc[Choose how to run OpenClaw] compares the raw manifests with claw-installer and the OpenShell sandbox.
 
 == The path through the Administrator guide
@@ -96,6 +115,7 @@ xref:admin/access.adoc[Open the Control UI] walks through both ways in.
 
 === Tracing
 
+OpenClaw emits OpenTelemetry traces through its `diagnostics-otel` plugin, with tool names, latencies, and request and response sizes, and with tracing on you browse them in the MLflow UI of RHOAI.
 Tracing to MLflow comes from a separate overlay, `overlays/mlflow-tracing/`.
 It builds on the base manifests and adds an OpenTelemetry collector sidecar, a ServiceAccount, and a RoleBinding to the `mlflow-integration` ClusterRole.
 The overlay needs RHOAI with MLflow, and RHOAI 3.3.1 doesn't ship that ClusterRole, so it has to be created first.
@@ -110,6 +130,7 @@ You then patch the tracing settings into the running gateway and restart it.
 Two pages sit beside the main path, and you need them only in specific cases.
 
 xref:admin/install-openshell.adoc[Install OpenShell for sandboxes]::
+OpenShell is a runtime that runs AI agents in isolated sandboxes, where a policy you declare decides which files, system calls, and network destinations an agent may use.
 Developers who run OpenClaw in OpenShell sandboxes on the cluster need an OpenShell gateway there.
 The page installs the Agent Sandbox controller and its CRDs, then the OpenShell Helm chart, and connects the `openshell` CLI to the new gateway.
 It's cluster-admin work: the Agent Sandbox CRDs are cluster-scoped, and the OpenShell chart creates a ClusterRole and a ClusterRoleBinding.

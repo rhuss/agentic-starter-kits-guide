@@ -6,9 +6,13 @@
 // starter-kits:agents/openclaw/deployment/docs/installer-deployment.md:438,442
 // starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:31-40,69-76,97-99,108-116,134-140
 // starter-kits:agents/openclaw/deployment/manifests/kustomization.yaml:4-10
+// starter-kits:agents/openclaw/deployment/overlays/example/kustomization.yaml:5-9
 // openclaw:docs/install/docker.md:230-234,247-249,251-258
 // openclaw:docs/install/updating.md:16-18
+// openclaw:docs/install/kubernetes.md:190
+// openclaw:docs/cli/backup.md:14-24,48,62-77,90-92
 // openclaw:src/infra/state-migrations.messages.ts:158
+// openclaw:src/logging/subsystem.ts:79-100,236-262
 
 Once OpenClaw runs, three operations keep it healthy over time: a backup of its state, an upgrade to a new image, and a clean removal.
 All three act on the PersistentVolumeClaim (PVC) `openclaw-state`, which holds the gateway's configuration, its SQLite databases, and its logs.
@@ -21,7 +25,7 @@ Change the namespace in every command if you deployed into another project.
 
 OpenClaw keeps everything it owns under `~/.openclaw` on the PVC.
 A backup is a `tar` archive of that directory, streamed out of the gateway container to a file on your machine.
-Take it before an upgrade, and take it while no agent run is active, so that the SQLite databases are not written during the copy.
+Take it before an upgrade, and take it while no agent run is active, as the recipe advises.
 
 . Stream the state directory into a local archive.
 +
@@ -78,13 +82,14 @@ The recipe's manifests keep the entrypoint; this matters only if you customize h
 . After the Pod reports `1/1 Running` again, read the gateway log for the migration and readiness lines.
 A deployment that had legacy state to migrate logs `Auto-migrated legacy state`; every start logs `[gateway] ready` once the gateway serves.
 +
-Check: the log ends with `[gateway] ready`.
+Check: the output has a `[gateway] ready` line.
+The gateway writes its log in color, so the raw output holds color codes around `[gateway]` and `ready`, and other lines that contain the word `ready` may appear before it.
 +
 [source,bash]
 ----
 oc logs deployment/openclaw -c gateway -n my-openclaw | grep -E "migrated|ready"
 ----
-// expect: contains "[gateway] ready"
+// expect: matches /\[gateway\]\S* \S*ready\S*$/
 
 === If the gateway fails with "EPERM: operation not permitted, fchmod"
 
@@ -108,9 +113,9 @@ Deleting the PVC `openclaw-state` is the irreversible part, so back up the state
 
 [CAUTION]
 ====
-Deleting the PVC removes all agent sessions, the SQLite state, and the logs.
-There is no undo once the volume is released.
-Take the backup above before you delete, and if you want the volume to survive deletion, give the PVC a `Retain` reclaim policy before you remove the deployment.
+Deleting the PVC removes all agent sessions, the SQLite state, and the logs from the deployment.
+Whether the backing volume and its data are deleted as well depends on the reclaim policy of the PersistentVolume or the StorageClass, `Delete` or `Retain`.
+Take the backup above before you delete, and if you want the volume to survive deletion, make sure that policy is `Retain` before you remove the deployment.
 ====
 
 . Delete the objects created from the base manifests.
@@ -128,5 +133,11 @@ The overlay sets the namespace rather than creating it, so the project `my-openc
 
 == Restore
 
-No source in this guide's baseline documents how to restore the `~/.openclaw` state from the backup archive, so this guide does not describe a restore procedure.
-Keep the archive from the backup step and the per-database copies that doctor writes during an upgrade; a rollback needs the state that matches the old image.
+The recipe documents the `tar` backup above, but not how to put such an archive back into the Pod, so this guide doesn't describe a restore of the `tar` archive.
+Keep the archive and the per-database copies that doctor writes during an upgrade, because a rollback has to restore the matching state as well as the old image.
+
+OpenClaw has backup and restore commands of its own, described in its https://docs.openclaw.ai/cli/backup[backup CLI reference].
+`openclaw backup create --verify` writes an archive of the state, the configuration, and the credentials and checks it right away.
+`openclaw backup restore <archive> --target <fresh-directory>` verifies such an archive and extracts it into an empty staging directory, and it never restores in place.
+Putting the restored state into service is a separate offline step: stop the gateway, move the restored state into place, and run `openclaw doctor` before you start the gateway again.
+This guide hasn't adapted these commands to the recipe's Pod.

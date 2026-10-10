@@ -21,6 +21,7 @@
 // openclaw:src/gateway/server/ws-connection/connect-admission.ts:162-177
 // openclaw:src/gateway/ingress-attribution.ts:201-250
 // openclaw:src/gateway/net.ts:63-75,199-228
+// openclaw:src/gateway/gateway-http-route-contracts.ts:1-8,17-29
 // openclaw:src/gateway/server-http.ts:266-279,317-331,386-398
 // openclaw:src/gateway/http-common.ts:102-115
 // openclaw:src/gateway/server-http-probes.ts:109-120
@@ -51,7 +52,7 @@ OpenClaw treats a request that carries a `Forwarded`, `X-Forwarded-*`, or `X-Rea
 When such a request comes from an address outside `gateway.trustedProxies`, the gateway can't tell which client sent it.
 It then answers the request with HTTP 403 and the error type `proxy_attribution_required`.
 This applies to nearly every route, including the unauthenticated startup probe `/startupz`.
-Only the liveness probe `/healthz` and routes that plugins authenticate on their own are exempt.
+Only the liveness probe `/healthz`, its alias `/health`, and routes that plugins authenticate on their own are exempt.
 
 The OpenShift router adds `X-Forwarded-For` headers by default.
 That's why the recipe's Route carries the annotation `haproxy.router.openshift.io/set-forwarded-headers: never`, which tells the router not to add these headers.

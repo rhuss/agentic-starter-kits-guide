@@ -1,12 +1,16 @@
 = How the sandbox image is built
 
 // Sources:
-// starter-kits:sandboxes/base/Containerfile:12,15-16,19-33,44-46,49-56,59-60,66-73
+// starter-kits:sandboxes/base/Containerfile:12,15-16,19-33,43-46,49-56,59-60,66-73
 // starter-kits:sandboxes/base/entrypoint.sh:4,20-33
 // starter-kits:sandboxes/base/policy.yaml:1-24
 // starter-kits:sandboxes/base/README.md:3,7-12,16,42-47
 // starter-kits:agents/openclaw/deployment/Containerfile.openshell:9,11,13-18,26-33,35-43
-// openshell:docs/how-it-works/policies/schema.mdx:11-13,28
+// starter-kits:agents/openclaw/deployment/README.md:162
+// openshell:docs/how-it-works/policies/schema.mdx:11-13,28,82-93
+// openshell:docs/kubernetes/openshift.mdx:63-64
+// openshell:docs/how-it-works/sandboxes/runtimes.mdx:264,267
+// openshell:architecture/compute-runtimes.md:389,393-395
 // openshell:docs/how-it-works/policies/manage-policies.mdx:42-52,355-361
 // openclaw:docs/install/node-compatibility.md:21,42
 
@@ -39,9 +43,13 @@ RUN useradd -r -s /usr/sbin/nologin supervisor && \
 ----
 
 The `sandbox` user has UID 1001 and GID 0, the root group.
-Membership of GID 0 is what lets the image run under OpenShift, which assigns an arbitrary UID to a Pod and expects the process to belong to the root group.
-The home directory `/sandbox` and the working directory `/workspace` are both created and set to `1001:0` with mode 775, so the arbitrary UID that OpenShift picks can still write to them through the group.
+The base chooses GID 0 for OpenShift's arbitrary UIDs.
+The home directory `/sandbox` and the working directory `/workspace` are both created and set to `1001:0` with mode 775, so a process in the root group can write to them.
 The final `USER` line in the base is the UID 1001, and the working directory is `/sandbox`.
+
+That group design serves an OpenShift pod that runs the image directly.
+In an OpenShell sandbox on OpenShift, the Kubernetes driver takes the UID and GID from the namespace's UID range instead, so the workload runs with that GID rather than GID 0.
+There, `/workspace` from the base image is not writable, and the sandbox works in `/sandbox`, as xref:developer/run-in-sandbox.adoc#openshift-specifics[OpenShift specifics] describes.
 
 == The default policy
 
@@ -72,7 +80,9 @@ filesystem_policy:
 
 The `filesystem_policy` block lists the paths the workload can read and the paths it can also write.
 `/sandbox` and `/workspace`, the two directories the base created for the user, are both read-write, while the system paths stay read-only.
-The policy also sets `landlock.compatibility` to `best_effort` and a `process` block that runs the workload as the `sandbox` user and group.
+The policy also sets `landlock.compatibility` to `best_effort` and a `process` block that names `sandbox` as the user and group of the workload.
+Only Docker and Podman apply the `process` fields, and only from a policy passed when the sandbox is created.
+Kubernetes sandboxes run as the identity that their driver configures.
 
 A policy baked into the image at `/etc/openshell/policy.yaml` is the image policy.
 OpenShell uses the image policy only when the sandbox has no saved policy, so a policy you pass with `--policy` or through `OPENSHELL_SANDBOX_POLICY` takes precedence.
@@ -99,9 +109,13 @@ For any other name, it execs that command when it is already on the `PATH`.
 When the command is missing, the entrypoint looks for an install script at `/etc/openshell/agents/<name>.sh`, runs it, and then execs the command.
 A flavor image therefore selects its agent by setting `AGENT_NAME`, and the base needs no change to carry a new flavor.
 
+This selection happens only when a container starts the image with its own entrypoint, for example with `podman run`.
+On Kubernetes, OpenShell overrides the image's command with its own sandbox runtime, so the entrypoint does not run in an OpenShell sandbox there.
+xref:developer/run-in-sandbox.adoc[Run OpenClaw in an OpenShell sandbox] therefore names the OpenClaw gateway as the sandbox's main process.
+
 == The OpenClaw flavor
 
-The OpenClaw flavor builds on the base, adds a Node.js runtime and the OpenClaw CLI, and sets `AGENT_NAME` so the entrypoint starts OpenClaw.
+The OpenClaw flavor builds on the base, adds a Node.js runtime and the OpenClaw CLI, and sets `AGENT_NAME` so the base entrypoint starts OpenClaw when the image runs with that entrypoint.
 
 === Why Node.js comes from the official build
 
@@ -140,6 +154,7 @@ out="$(openclaw --version 2>&1)" && echo "$out" && \
 ----
 
 The flavor finishes by switching back to UID 1001, setting the working directory to `/workspace`, and exporting `AGENT_NAME=openclaw`.
-That variable is what the base entrypoint reads to start the OpenClaw CLI when the sandbox runs.
+The base entrypoint reads that variable to start the OpenClaw CLI when you run the image directly, for example with `podman run`.
+In an OpenShell sandbox on Kubernetes the entrypoint does not run, and the command you give `openshell sandbox create` becomes the main process instead.
 
 With the image understood, continue to xref:developer/build-image.adoc[Build and push the images] to build it for `linux/amd64` and push it to a registry your cluster can pull from.

@@ -5,7 +5,7 @@
 // starter-kits:agents/openclaw/deployment/docs/mlflow-tracing.md:198-205
 // starter-kits:agents/openclaw/deployment/docs/troubleshooting.md:127-129
 // starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:4,12-21,25,31-47
-// starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:21-28,42-55,81-82,97-99,134-140
+// starter-kits:agents/openclaw/deployment/manifests/04-deployment.yaml:8-17,21-28,42-55,81-82,97-99,134-140
 // starter-kits:agents/openclaw/deployment/overlays/example/kustomization.yaml:12-16
 // openclaw:docs/cli/config.md:79-81,117-129,172,221-229,384-393,441-447,566,573-587,592-594
 // openclaw:docs/gateway/configuration.md:106-117
@@ -291,7 +291,7 @@ The new Pod's init container finds `openclaw.json` on the PVC and keeps it, so t
 [WARNING]
 ====
 Removing `gateway.controlUi.allowedOrigins` with `null` changes `openclaw.json`, but the running gateway keeps the old origins until it restarts.
-Restart the gateway after such a removal; until then, the old origins still apply.
+Restart the gateway after such a removal.
 ====
 
 . Restart the Deployment.
@@ -305,15 +305,15 @@ oc rollout restart deployment/openclaw -n my-openclaw
 // expect: exit 0
 
 . Look at the Pod status.
-Repeat the command until the new Pod shows `1/1 Running`.
+Repeat the command until the old Pod is gone and the new Pod shows `1/1 Running`.
 +
-Check: the `openclaw` Pod shows `1/1 Running`.
+Check: only one `openclaw` Pod is listed, and it shows `1/1 Running`.
 +
 [source,bash]
 ----
-oc get pods -n my-openclaw
+oc get pods -l app=openclaw -n my-openclaw
 ----
-// expect: contains "1/1" and contains "Running"
+// expect: lines == 2 and contains "1/1" and contains "Running"
 
 . Read the init container's log.
 +
@@ -361,3 +361,4 @@ oc get configmap openclaw-config -n my-openclaw -o jsonpath='{.data.openclaw\.js
 // expect: contains "baseUrl"
 
 xref:admin/tracing.adoc[Send traces to MLflow] applies a larger configuration change to a running gateway with the same `config patch` mechanism.
+If you don't need tracing, continue with xref:admin/maintain.adoc[Back up, upgrade, and remove].

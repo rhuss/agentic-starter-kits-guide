@@ -50,7 +50,7 @@ The recipe's model-compatibility document reports these results, dated 2026-04-1
 | Routes through the Codex app-server; requires a sidecar deployment
 |===
 
-The `Expected` entry marks a model the document predicts but does not report as run.
+The table marks `codex/gpt-5.4` as `Expected`.
 
 [NOTE]
 ====

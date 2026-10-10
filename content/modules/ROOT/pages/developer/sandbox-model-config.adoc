@@ -31,8 +31,8 @@ Anything OpenClaw writes there stays with the sandbox until you delete it.
 
 You don't need a shell in the sandbox to write the file.
 `openshell sandbox exec` runs one command in the running sandbox, passes piped input to it, and returns its exit code.
-The command runs in the workload Pod next to the gateway.
-Its network traffic takes the same path as the gateway's: through the supervisor, which runs in its own Pod and opens a connection only when the sandbox policy allows it.
+The command runs in the workload pod next to the gateway.
+Its network traffic takes the same path as the gateway's: through the supervisor, which runs in its own pod and opens a connection only when the sandbox policy allows it.
 
 == Write the provider configuration
 
@@ -207,3 +207,5 @@ OpenClaw's vLLM provider reads its key from the `VLLM_API_KEY` environment varia
 
 This guide has not tested a provider with OpenClaw in the sandbox.
 Read the OpenShell documentation on providers and inference access before you rely on it.
+
+To adapt the recipe further, continue to xref:developer/extend.adoc[Extend the recipe].

@@ -29,7 +29,8 @@
 // openclaw:docs/install/kubernetes.md:95
 // openclaw:docs/web/control-ui/connect-and-pair.md:50
 // openclaw:scripts/k8s/manifests/deployment.yaml:147-157,165-166
-// openshell:docs/kubernetes/setup.mdx:11-16,28-31,44,50-58,70-71
+// openclaw:docs/cli/config.md:384-400
+// openshell:docs/kubernetes/setup.mdx:11-16,21-25,28-31,44,50-58,70-71
 // openshell:docs/upgrade/0-1-0.mdx:27
 
 The start page introduced three ways to run OpenClaw: the recipe's raw manifests, claw-installer, and an OpenShell sandbox.
@@ -66,7 +67,7 @@ The rest of the page shows you when one of the others might still fit better, an
 |Configuration after the first start
 |Lives on the PVC, and you change it with `config patch`
 |Copied from the ConfigMap on every start
-|None, the recipe starts the gateway unconfigured
+|None at first, because the recipe starts the gateway unconfigured; you add a model provider with `config patch`, and the file lives on the sandbox's volume
 
 |Upgrades
 |The image entrypoint runs `openclaw doctor --fix` before the gateway starts
@@ -74,7 +75,7 @@ The rest of the page shows you when one of the others might still fit better, an
 |No upgrade path in the recipe
 
 |Needs cluster-admin
-|Only for MLflow tracing on Red Hat OpenShift AI (RHOAI) 3.3.1
+|Only for MLflow tracing on Red Hat OpenShift AI (RHOAI) 3.3.1, or on any other cluster without the `mlflow-integration` ClusterRole
 |Not for the deployment itself, if you can create projects or use an existing one
 |Yes, to install and upgrade OpenShell
 
@@ -97,7 +98,8 @@ The token and the device approval are what keep everyone else out.
 xref:admin/access.adoc[Open the Control UI] walks you through both ways in.
 
 claw-installer puts a second door in front of the first one.
-Its OpenShift plugin adds an OAuth proxy sidecar, binds the gateway to loopback, and points the Route at the proxy, so every browser signs in with an OpenShift account first.
+Its OpenShift plugin adds an OAuth proxy sidecar, binds the gateway to loopback, and points the Route at the proxy, so a browser that opens the Control UI signs in with an OpenShift account first.
+The proxy leaves the `/metrics` and `/api` paths unauthenticated, though.
 Here's the catch, though.
 The proxy asks only for the `user:info` scope, which lets in any authenticated OpenShift user, not just the members of your project.
 Limiting it to your project takes a different proxy setting plus a ClusterRoleBinding for `system:auth-delegator`, and creating that binding needs cluster-admin.
@@ -191,7 +193,7 @@ xref:admin/deploy-installer.adoc[Deploy with claw-installer] lists every differe
 
 The sandbox path is the one the recipe's agent description calls a mode for experimentation.
 The recipe tested it with OpenShell {openshell-version}.
-OpenShell's own upgrades can break existing setups, too: sandboxes created with a 0.0.x release have to be recreated after the upgrade to 0.1.
+OpenShell's own upgrades can break existing setups, too: sandboxes created with a 0.0.x release aren't compatible with 0.1.0, so you remove them before the upgrade and recreate them afterward.
 
 == Known limits
 
@@ -204,7 +206,7 @@ OpenClaw keeps its state in SQLite, which doesn't support concurrent writers, so
 The recipe's own docs state the consequence plainly: there's no high availability.
 
 No NetworkPolicy::
-Neither the recipe's manifests nor claw-installer create a NetworkPolicy.
+Neither the raw manifests nor claw-installer creates a NetworkPolicy.
 What the gateway Pod may connect to, and who may connect to it, is up to your cluster's defaults.
 The sandbox is the exception here.
 OpenShell creates NetworkPolicies around every sandbox, but they only take effect when your cluster's network plugin enforces them.

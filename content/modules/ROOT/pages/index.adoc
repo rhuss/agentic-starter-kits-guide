@@ -21,13 +21,14 @@
 
 By the end of this guide, you have an OpenClaw agent on Red Hat OpenShift that you chat with in your browser.
 It answers with a model you serve yourself through vLLM.
-And you deploy it with access to a single namespace, no cluster-admin rights needed.
+And on the main path, you deploy it with access to a single namespace, no cluster-admin rights needed.
 
 Why bother running an agent yourself?
 An agent that acts for you holds credentials, reads mail, and runs commands on real computers.
 So where it runs, and what it may reach, matters more than it does for any app you've installed before.
 Running one on your own platform usually means stitching the pieces together yourself.
-The {starter-kits-repo}[Agentic Starter Kits] ship a recipe that does the stitching, and this guide walks you through it.
+The {starter-kits-repo}[Agentic Starter Kits] are a collection of starter kits for building and deploying AI agents on Red Hat OpenShift, each with its own docs and deployment configuration.
+One of them is a recipe for OpenClaw that does the stitching, and this guide walks you through it.
 
 == What the parts are
 
@@ -55,7 +56,7 @@ The agent never sees real credentials, either: OpenShell adds them only to reque
 === vLLM
 
 https://docs.vllm.ai/en/latest/[vLLM] is a library for running large language models and serving them through an OpenAI-compatible API.
-The recipe is set up for vLLM, and it accepts KServe or an external API as the model endpoint too.
+The recipe is set up for vLLM, and it accepts other OpenAI-compatible endpoints too, such as a model served through KServe or an external provider's API.
 
 == How they fit together
 

@@ -9,6 +9,10 @@
 // openshell:docs/kubernetes/setup.mdx:48-58,70-72
 // openshell:docs/kubernetes/setup.mdx:77-83
 // openshell:docs/kubernetes/setup.mdx:203-216
+// openshell:docs/kubernetes/access-control.mdx:11-18
+// openshell:crates/openshell-cli/src/commands/gateway.rs:177-217
+// openshell:crates/openshell-cli/src/color.rs:96-113
+// openshell:deploy/helm/openshell/values.yaml:327,409
 // openshell:docs/upgrade/0-1-0.mdx:27
 
 This page is an optional branch of the Administrator guide.
@@ -121,6 +125,7 @@ oc -n openshell port-forward svc/openshell 8080:8080
 . In another terminal, install the TLS client bundle so the CLI can verify the gateway certificate.
 +
 The chart generates an mTLS bundle for transport security.
+The bundle doesn't authenticate you as a user: on Kubernetes, OpenShell leaves user authentication to OIDC or a trusted access proxy.
 Copy it into the gateway's CLI configuration directory.
 The server certificate SANs include `localhost` and `127.0.0.1`, so hostname verification passes over the port-forward without extra flags.
 +
@@ -137,14 +142,17 @@ oc -n openshell get secret openshell-client-tls \
 
 . Register the gateway with the CLI and confirm it is reachable.
 +
-Check: the CLI reports the gateway is reachable.
+Check: the status command reports `Status: Connected`.
+`Status: Error` or `Status: Disconnected` means the CLI can't reach the gateway, and the command still exits with 0.
 +
 [source,bash]
 ----
 openshell gateway add https://127.0.0.1:8080 --local --name openshift
 openshell status
 ----
-// expect: exit 0
+// expect: contains "Status: Connected" and not-contains "Connected (HTTP)"
++
+NOTE: The OpenShell gateway this guide was checked against runs without TLS and without user authentication, so the TLS bundle steps above were not exercised on that cluster.
 
 == Caveats
 
@@ -162,6 +170,6 @@ The selected mode is reported as `seccomp_listener_mode` in the sandbox qualific
 
 [IMPORTANT]
 ====
-Sandboxes created with a 0.0.x release are not compatible with {openshell-version}.
-Remove them before upgrading and create them again afterward, because their persisted boundary and runtime descriptors changed.
+OpenShell 0.1.0 changed the persisted sandbox boundary and runtime descriptors, so sandboxes created with a 0.0.x release are not compatible with it.
+If you upgrade from a 0.0.x release, remove those sandboxes before the upgrade and recreate them afterward.
 ====

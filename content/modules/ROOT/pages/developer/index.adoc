@@ -1,29 +1,67 @@
 = Developer guide
 
 // Sources:
-// starter-kits:agents/openclaw/deployment/README.md:112,114-121,123-137,139-150,152-158,165
+// starter-kits:agents/openclaw/deployment/README.md:19,112,114-121,123-137,139-150,152-158,165
+// starter-kits:agents/openclaw/deployment/manifests/02-configmap.yaml:26-28
+// starter-kits:agents/openclaw/templates/openclaw_agent/README.md:21
 // starter-kits:sandboxes/base/README.md:3,9-11,27-47,51
+// openclaw:README.md:18,20
+// openclaw:docs/start/why-openclaw.md:13,29
+// openclaw:docs/concepts/architecture.md:10-14
+// openclaw:docs/web/control-ui.md:11-13
+// openshell:README.md:19,25
+// openshell:docs/about/architecture.mdx:18-24,100-104
+// openshell:docs/kubernetes/openshift.mdx:76-84
+// openshell:docs/kubernetes/setup.mdx:203-216
 
-This part of the guide is for the developer who runs OpenClaw inside an OpenShell sandbox rather than as the gateway Deployment.
-It follows the recipe's `Containerfile.openshell`, which builds on the shared base image under `sandboxes/base/` and layers Node.js and the OpenClaw CLI on top.
-The path runs from the image layers, through building and pushing that image, to a running sandbox, and on to adapting the recipe for your own use.
+In this part of the guide you run OpenClaw inside an OpenShell sandbox on your OpenShift cluster, connect it to your own model, and learn where to extend the recipe.
+An agent that acts for you holds credentials, reads mail, and runs commands on real computers, so what it may reach matters.
+The sandbox puts a policy around the agent that you declare and that OpenShell enforces.
+
+== What the parts are
+
+https://github.com/openclaw/openclaw[OpenClaw] is an open-source AI agent.
+Its state, memory, and credentials stay on your own infrastructure, and your prompts go only to the model provider you configure.
+At its center runs the _OpenClaw gateway_, one long-lived process that every client connects to, including the Control UI, a web app that the OpenClaw gateway serves to your browser.
+
+{openshell-repo}[OpenShell] is an open-source runtime that runs AI agents in isolated sandboxes.
+A _sandbox_ is a fenced-off environment for one agent.
+Kernel controls decide which files the agent may open and which system calls it may make, and every network connection passes a policy check before it leaves the sandbox.
+The agent never sees real credentials: OpenShell adds them only to requests bound for endpoints you approved.
+The _OpenShell gateway_ is OpenShell's control plane.
+It creates and manages sandboxes, and you reach it with the `openshell` CLI.
+
+Two gateways therefore appear on these pages, and each one always carries its product name.
+
+== How they fit and why
+
+The OpenShell gateway creates the sandbox from an image you build and push, and the OpenClaw gateway runs inside it as the sandbox's main process.
+On OpenShift, an OpenShell supervisor in its own pod checks each network request from the sandbox against the policy.
+The default policy denies all egress, so OpenClaw reaches your model only after you add a rule for that endpoint.
+
+Why run OpenClaw this way instead of as the Deployment that the Administrator guide sets up?
+OpenClaw can run the agent's commands in a sandbox of its own, but that sandboxing is off by default, and the recipe's configuration keeps it off.
+OpenShell adds the isolation from outside the agent: you declare in a policy what the agent can touch, and OpenShell enforces it.
+The recipe offers this OpenShell sandbox mode for experimentation.
 
 == The path through the Developer guide
 
 Work through the pages in this order.
-The first two build and publish the sandbox image, the next two start the gateway in a sandbox and let it reach your model, and the last one takes the recipe further.
+The first two build and publish the sandbox image, the next two run the OpenClaw gateway in a sandbox and connect it to your model, and the last one takes the recipe further.
 
 . xref:developer/sandbox-image.adoc[How the sandbox image is built]: see how the flavor Containerfile builds on the shared base image, which carries the `sandbox` user, the system packages, and the default policy, and adds Node.js and the OpenClaw CLI.
-. xref:developer/build-image.adoc[Build and push the images]: build the image with `podman` for `linux/amd64` and push it to a registry your cluster can pull from, because a gateway on the cluster pulls the image rather than reading a local build.
-. xref:developer/run-in-sandbox.adoc[Run OpenClaw in an OpenShell sandbox]: create the sandbox from that image with the gateway as its main process, then forward the gateway port to your machine.
-. xref:developer/sandbox-model-config.adoc[Configure the model inside the sandbox]: the sandbox policy denies network egress by default, so add a rule that lets the Node.js binary reach your model endpoint.
-. xref:developer/extend.adoc[Extend the recipe]: adapt the recipe, following the same base-plus-flavor pattern that the other agent sandboxes in the starter kits use.
+. xref:developer/build-image.adoc[Build and push the images]: build the image with `podman` for `linux/amd64` and push it to a registry your cluster can pull from, because the OpenShell gateway on the cluster pulls the image rather than reading a local build.
+. xref:developer/run-in-sandbox.adoc[Run OpenClaw in an OpenShell sandbox]: create the sandbox from that image with the OpenClaw gateway as its main process, forward its port to your machine, and add the egress rule that lets the Node.js binary reach your model endpoint, since the sandbox policy denies network egress by default.
+. xref:developer/sandbox-model-config.adoc[Configure the model inside the sandbox]: give OpenClaw a model provider configuration from your workstation, and see which restarts that configuration survives.
+. xref:developer/extend.adoc[Extend the recipe]: change the deployment with a Kustomize overlay, see what the recipe's agent template declares, and add workspace files, skills, and plugins to OpenClaw itself.
 
 == What you need
 
 Have these ready before you start.
 
 * `podman`, to build the sandbox image and push it.
-* A registry your cluster can pull from, since the gateway reads the published image there.
+* A registry your cluster can pull from, since the OpenShell gateway reads the published image there.
 * The `openshell` CLI at version `{openshell-version}`, the version these pages are tested against.
 * An OpenShell gateway on the cluster, set up as in xref:admin/install-openshell.adoc[Install OpenShell for sandboxes].
+Registering the `openshell` CLI with it copies a TLS client bundle from the Secret `openshell-client-tls`, so you need read access to that Secret in the OpenShell gateway's namespace.
+* A model endpoint that the cluster can reach, such as vLLM, KServe, or an external API.

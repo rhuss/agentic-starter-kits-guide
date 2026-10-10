@@ -11,6 +11,10 @@
 // openclaw:docs/gateway/index.md:104-109
 // openclaw:docs/providers/vllm.md:11-17,91-115
 // openclaw:docs/gateway/opentelemetry/setup.md:17-40,44-56,164-173
+// openclaw:docs/gateway/sandboxing/modes-scope-and-backend.md:21
+// openclaw:docs/gateway/sandbox-vs-tool-policy-vs-elevated.md:36
+// openclaw:docs/concepts/models.md:491
+// openclaw:docs/tools/plugin.md:202-203
 
 This page lists the `openclaw.json` keys the recipe sets, with the meaning of each key, its shipped value, and whether a change to it hot-applies or needs a gateway restart.
 It covers the keys in the base ConfigMap, the keys the tracing overlay adds or changes, the key the guide adds for the Route, and the key the guide warns against.
@@ -48,7 +52,7 @@ Values such as `YOUR-MODEL-ID` and `YOUR-VLLM-OR-OGX-ENDPOINT` are placeholders 
 
 | `gateway.bind`
 | `lan`
-| The bind mode. `lan` listens on `0.0.0.0`, which the recipe needs so the Pod's probes and the port-forward reach the gateway.
+| The bind mode. `lan` listens on `0.0.0.0`.
 | Gateway restart
 
 | `gateway.mode`
@@ -73,7 +77,7 @@ Values such as `YOUR-MODEL-ID` and `YOUR-VLLM-OR-OGX-ENDPOINT` are placeholders 
 
 | `agents.defaults.sandbox.mode`
 | `off`
-| Agents run without an OpenShell sandbox in the base recipe.
+| No agent-wide sandboxing; tools run directly on the host where the gateway runs.
 | Hot reload
 
 | `models.mode`
@@ -137,7 +141,7 @@ xref:admin/tracing.adoc[Send traces to MLflow] applies this file, and xref:refer
 
 | `plugins.allow`
 | `["diagnostics-otel"]`
-| An exclusive allowlist of the plugins the gateway loads. Only `diagnostics-otel` loads, so default plugins such as `device-pair` stay off; xref:admin/tracing.adoc[Send traces to MLflow] covers the effect.
+| An exclusive allowlist that limits which plugins load; plugin-owned tools outside it stay unavailable. xref:admin/tracing.adoc[Send traces to MLflow] covers the effect.
 | Hot reload
 
 | `plugins.entries.diagnostics-otel.enabled`

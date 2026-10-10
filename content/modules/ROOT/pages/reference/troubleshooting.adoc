@@ -4,10 +4,15 @@
 // starter-kits:agents/openclaw/deployment/docs/troubleshooting.md:20-383
 // starter-kits:agents/openclaw/deployment/docs/raw-deployment.md:182-241
 // starter-kits:agents/openclaw/deployment/docs/installer-deployment.md:178-315
-// openclaw:docs/gateway/heartbeat.md:25-27,37,96,101,167-168
+// openclaw:docs/gateway/heartbeat.md:21,25-27,37,96-97,101,167-168,349
 // openclaw:docs/gateway/doctor/config-migrations.md:399
 // openclaw:docs/cli/devices.md:40-53,140-150
+// openclaw:docs/cli/config.md:117,133
+// openclaw:docs/cli/gateway/query.md:233-248
 // openclaw:docs/gateway/troubleshooting/config-validation-and-probes.md:11-75,84-106
+// openclaw:src/gateway/server-startup-log.ts:117-128
+// claw-installer:src/server/deployers/k8s-helpers.ts:866,934-938
+// claw-installer:src/server/deployers/k8s-manifests.ts:322-334,631
 
 This page lists the problems you are most likely to hit when you run OpenClaw on OpenShift, from most to least frequent.
 Each entry gives the symptom, the cause, the fix, and a check.
@@ -74,6 +79,10 @@ kind: Route
 metadata:
   name: openclaw
   namespace: my-openclaw
+  labels:
+    app: openclaw
+  annotations:
+    haproxy.router.openshift.io/timeout: 30m
 spec:
   to:
     kind: Service
@@ -118,22 +127,28 @@ echo '{"agents": {"defaults": {"model": "vllm/<model-id>"}},
 
 The patch mechanism, including the restart hint OpenClaw returns, is described in xref:admin/change-config.adoc[Change the configuration of a running gateway].
 
-Check:: The gateway log shows the expected model after the next reload.
+Check:: `config get` prints your provider-prefixed model ID.
 
 [source,bash]
 ----
-oc logs deployment/openclaw -c gateway -n my-openclaw | grep "agent model"
+oc exec deployment/openclaw -c gateway -n my-openclaw -- \
+  node /app/dist/index.js config get agents.defaults.model
 ----
-// expect: contains "agent model"
+// expect: contains "vllm/"
+
+The gateway writes its `agent model` log line only at startup, so that line shows the new model only after the next restart.
 
 == Heartbeat messages flooding the chat UI
+
+This entry applies only to a deployment that gives heartbeat a route: a configured owner, a messaging channel, or an explicit `heartbeat.target`.
+With the recipe's configuration, which connects no channels and names no owner, each heartbeat poll is skipped as `reason=no-route` before the agent runs.
 
 Symptom::
 Repeated `HEARTBEAT_OK` messages, or "Agent failed before reply" errors, arrive on a fixed cadence.
 
 Cause::
 The heartbeat scheduler fires on a default cadence of `30m`, or `1h` when Anthropic OAuth or token auth is the resolved auth mode.
-When the model provider is misconfigured, each tick turns into an error instead of a quiet acknowledgment.
+When the model provider is misconfigured, each tick that runs turns into an error instead of a quiet acknowledgment.
 
 Fix::
 Set `agents.defaults.heartbeat.every` to `"0m"` to disable the recurring cadence, and set the same on any per-agent entry under `agents.entries`.
@@ -151,7 +166,7 @@ The roster key is `agents.entries`, not the legacy `agents.list`; `openclaw doct
 If any agent has a `heartbeat` block, only those agents run heartbeats, so disable the cadence on each such entry too.
 ====
 
-Check:: The system-owned heartbeat job is disabled.
+Check:: The system-owned heartbeat job is still listed; with `0m` the job stays but is disabled.
 
 [source,bash]
 ----
@@ -210,7 +225,13 @@ Back up the state first with the `tar` form in xref:admin/maintain.adoc[Back up,
 The installer names the volume `openclaw-home-pvc`; the raw manifests name it `openclaw-state`.
 ====
 
-Check:: After the redeploy, the gateway log reaches `[gateway] ready`.
+Check:: After the redeploy, the gateway log contains the gateway's `ready` line.
+
+[source,bash]
+----
+oc logs deployment/openclaw -c gateway -n my-openclaw | grep ready
+----
+// expect: contains "ready"
 
 == Gateway fails with "EPERM: operation not permitted, fchmod"
 
@@ -233,7 +254,13 @@ Apply the current manifests.
 They mount the volume at `/home/node`, and the init container moves any existing state into `~/.openclaw` once.
 The upgrade path is in xref:admin/maintain.adoc[Back up, upgrade, and remove].
 
-Check:: The gateway log reaches `[gateway] ready` after the next start.
+Check:: After the next start, the gateway log contains the gateway's `ready` line.
+
+[source,bash]
+----
+oc logs deployment/openclaw -c gateway -n my-openclaw | grep ready
+----
+// expect: contains "ready"
 
 == Config clobbered on restart
 
@@ -242,19 +269,23 @@ Settings revert unexpectedly after a restart, and timestamped `openclaw.json.clo
 
 Cause::
 Older manifests copied `openclaw.json` from the ConfigMap on every pod start, overwriting the runtime changes OpenClaw writes to the same file.
-OpenClaw also refuses a config it did not write and restores its last-known-good copy, preserving the rejected payload as a `.clobbered.*` or `.rejected.*` file.
+OpenClaw also guards the file itself, with separate mechanisms.
+Its own writes reject an invalid or destructive payload before commit and save that payload as `openclaw.json.rejected.*`.
+A direct edit that fails validation is skipped by hot reload, and the running gateway keeps its current config.
+Only `openclaw doctor --fix` restores the last-known-good copy, and it keeps the broken edit as `openclaw.json.clobbered.*`.
 
 Fix::
 Apply the current manifests, whose init container copies the ConfigMap only when no `openclaw.json` exists yet.
 After that, change the running configuration with `config patch` rather than ConfigMap edits (see xref:admin/change-config.adoc[Change the configuration of a running gateway]).
-If a write was rejected, validate the config and let `doctor` repair it.
+If a write was rejected, validate the config and run `doctor --fix` to repair it.
+To keep a change from the preserved file, copy only the keys you meant to change from the `.clobbered.*` or `.rejected.*` file and apply them with `config patch`.
 
 [source,bash]
 ----
 oc exec deployment/openclaw -c gateway -n my-openclaw -- \
   node /app/dist/index.js config validate
 oc exec deployment/openclaw -c gateway -n my-openclaw -- \
-  node /app/dist/index.js doctor
+  node /app/dist/index.js doctor --fix
 ----
 
 Check:: `config validate` reports the configuration as valid, and no new `.clobbered.*` file appears after a restart.
@@ -295,7 +326,7 @@ Read-only commands that locate most of the problems above.
 
 [source,bash]
 ----
-# Pod and container status (2/2 means oauth-proxy and gateway are both up)
+# Pod and container status
 oc get pods -n my-openclaw
 
 # Gateway logs: tail, full, and the previous container after a crash
@@ -309,10 +340,11 @@ oc logs deployment/openclaw -c oauth-proxy -n my-openclaw
 # Route TLS termination (should be edge)
 oc get route openclaw -n my-openclaw -o jsonpath='{.spec.tls.termination}'
 
-# Active model
+# Active model, as logged at the last startup
 oc logs deployment/openclaw -c gateway -n my-openclaw | grep "agent model"
 
 # On-disk config the gateway is actually using
+# (on installer deployments it contains the gateway token, so keep the output private)
 oc exec deployment/openclaw -c gateway -n my-openclaw -- \
   cat /home/node/.openclaw/openclaw.json
 

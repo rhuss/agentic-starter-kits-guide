@@ -15,7 +15,7 @@
 // starter-kits:agents/openclaw/deployment/overlays/mlflow-tracing/otel-collector-config.yaml:1-67
 
 This page lists the fields of every manifest the recipe ships, by resource.
-The base overlay in `agents/openclaw/deployment/manifests/` is applied with `oc apply -k`, as described in xref:admin/deploy.adoc[Deploy OpenClaw].
+The base manifests in `agents/openclaw/deployment/manifests/` are applied with `oc apply -k`, as described in xref:admin/deploy.adoc[Deploy OpenClaw].
 The tracing overlay in `agents/openclaw/deployment/overlays/mlflow-tracing/` layers the OpenTelemetry resources on top of the base, as described in xref:admin/tracing.adoc[Send traces to MLflow].
 For the OpenClaw gateway settings inside the ConfigMap, see xref:reference/configuration.adoc[Configuration reference].
 
@@ -78,6 +78,9 @@ The ConfigMap `openclaw-config` carries the label `app: openclaw` and holds one 
 | gateway.auth.mode
 | token
 
+| channels
+| {}
+
 | agents.defaults.model
 | vllm/YOUR-MODEL-ID
 
@@ -102,11 +105,17 @@ The ConfigMap `openclaw-config` carries the label `app: openclaw` and holds one 
 | models.providers.vllm.models[0].reasoning
 | false
 
+| models.providers.vllm.models[0].input
+| text
+
 | models.providers.vllm.models[0].contextWindow
 | 32768
 
 | models.providers.vllm.models[0].maxTokens
 | 4096
+
+| plugins
+| {}
 
 | tools.deny
 | group:web, browser
