@@ -199,6 +199,11 @@ The steps above cover an endpoint without authentication.
 For one that checks keys, don't pass the key with `--env` on `sandbox create` or `sandbox exec`.
 The CLI reserves `--env` for non-secret values and points to providers for API keys and tokens.
 
+The simplest option is to set `apiKey` in the `model.patch.json5` from earlier on this page to the real key, instead of the stand-in value.
+This guide verified that path on 2026-10-12 against a keyed in-cluster vLLM endpoint, and the agent test turn succeeded.
+The trade-off is that the key is then stored in `openclaw.json` on the sandbox volume, where anything running in the sandbox can read it.
+
+For stronger isolation, keep the key out of the sandbox with an OpenShell provider.
 OpenShell's mechanism for secrets is a provider.
 The sandbox receives only a placeholder in its environment, and OpenShell's proxy replaces the placeholder with the real value in an HTTP request to an endpoint that the provider's profile covers.
 A provider that holds an API key needs an imported profile.
